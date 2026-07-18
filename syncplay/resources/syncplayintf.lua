@@ -136,8 +136,8 @@ end
 local pausewarning_osd = ""
 local last_pausewarning_osd_time = nil
 local PAUSEWARNING_OSD_TIMEOUT = 2.5  -- Hides this long after the last update (server refreshes it every ~1s while over threshold)
-local PAUSEWARNING_BLINK_CYCLE = 1.6  -- Full blink cycle length (secs)
-local PAUSEWARNING_BLINK_ON_TIME = 1.2  -- Visible portion of each cycle (secs) - mostly on, brief dip
+local PAUSEWARNING_BLINK_CYCLE = 2.0  -- Full blink cycle length (secs)
+local PAUSEWARNING_BLINK_ON_TIME = 1.0  -- Visible portion of each cycle (secs)
 
 function set_pausewarning_osd(osd_message)
     pausewarning_osd = osd_message
@@ -195,12 +195,12 @@ function chat_update()
         end
     end
 
-    -- Syncplay pause-warning / yap-timer rows render below all original OSD entries
-    incrementRow,to_add = process_pausewarning_osd()
+    -- Syncplay yap-timer / pause-warning rows render below all original OSD entries
+    incrementRow,to_add = process_yaptimer_osd()
     if to_add ~= nil and to_add ~= "" then
         chat_ass = chat_ass .. to_add
     end
-    incrementRow,to_add = process_yaptimer_osd()
+    incrementRow,to_add = process_pausewarning_osd()
     if to_add ~= nil and to_add ~= "" then
         chat_ass = chat_ass .. to_add
     end
