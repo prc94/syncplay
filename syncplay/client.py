@@ -115,6 +115,9 @@ class SyncplayClient(object):
         else:
             self.__getUserlistOnLogon = False
         self._playerClass = playerClass
+        # Whether this client's player can render the live yap-timer overlay. Derived from the player
+        # class (known now, before the player process starts) so it can be advertised in the Hello.
+        self._yapTimerOSDSupported = getattr(playerClass, "yapTimerOSDSupported", False)
         self._config = config
 
         self._running = False
@@ -744,6 +747,7 @@ class SyncplayClient(object):
         features["managedRooms"] = True
         features["persistentRooms"] = True
         features["setOthersReadiness"] = True
+        features["yapTimer"] = self._yapTimerOSDSupported  # Can render the live yap-timer overlay
 
         return features
 
@@ -1686,6 +1690,7 @@ class UiManager(object):
         self.lastAlertOSDMessage = None
         self.lastAlertOSDEndTime = None
         self.lastError = ""
+        self._yapTimerWasPaused = False
 
     def getUIMode(self):
         return self.__ui.uiMode
@@ -1708,6 +1713,21 @@ class UiManager(object):
     def showDebugMessage(self, message):
         if constants.DEBUG_MODE and message.rstrip():
             sys.stderr.write("{}{}\n".format(time.strftime(constants.UI_TIME_FORMAT, time.localtime()), message.rstrip()))
+
+    def updateYapTimer(self, paused, current, total):
+        # Server-driven live yap timer (only sent to players that advertised yapTimer support).
+        # While paused we refresh every state tick so the overlay stays visible and counts up; on
+        # resume we show the final total once and let the player's overlay auto-hide.
+        if not self._client._player:
+            return
+        if paused:
+            self._yapTimerWasPaused = True
+            text = getMessage("yap-timer-osd-paused-message").format(utils.formatTime(current), utils.formatTime(total))
+            self._client._player.updateYapTimerOSD(text)
+        elif self._yapTimerWasPaused:
+            self._yapTimerWasPaused = False
+            text = getMessage("yap-timer-osd-total-message").format(utils.formatTime(total))
+            self._client._player.updateYapTimerOSD(text)
 
     def showChatMessage(self, username, userMessage):
         messageString = "<{}> {}".format(username, userMessage)

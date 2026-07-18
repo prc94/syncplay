@@ -20,13 +20,14 @@ import syncplay
 from syncplay import constants
 from syncplay.messages import getMessage
 from syncplay.protocols import SyncServerProtocol
-from syncplay.utils import RoomPasswordProvider, NotControlledRoom, RandomStringGenerator, meetsMinVersion, playlistIsValid, truncateText, getListAsMultilineString, convertMultilineStringToList
+from syncplay.utils import RoomPasswordProvider, NotControlledRoom, RandomStringGenerator, meetsMinVersion, playlistIsValid, truncateText, getListAsMultilineString, convertMultilineStringToList, formatTime
 
 class SyncFactory(Factory):
     def __init__(self, port='', password='', motdFilePath=None, roomsDbFile=None, permanentRoomsFile=None, isolateRooms=False, salt=None,
                  disableReady=False, disableChat=False, maxChatMessageLength=constants.MAX_CHAT_MESSAGE_LENGTH,
-                 maxUsernameLength=constants.MAX_USERNAME_LENGTH, statsDbFile=None, tlsCertPath=None):
+                 maxUsernameLength=constants.MAX_USERNAME_LENGTH, statsDbFile=None, tlsCertPath=None, yapTimer=False):
         self.isolateRooms = isolateRooms
+        self.yapTimer = yapTimer
         syncplay.messages.setLanguage(syncplay.messages.getInitialLanguage())
         print(getMessage("welcome-server-notification").format(syncplay.version))
         self.port = port
@@ -154,8 +155,12 @@ class SyncFactory(Factory):
 
     def removeWatcher(self, watcher):
         if watcher and watcher.getRoom():
+            room = watcher.getRoom()
             self.sendLeftMessage(watcher)
             self._roomManager.removeWatcher(watcher)
+            if room.isEmpty():
+                self._stopYapTicker(room)
+                room.yapReset()
             if self.roomsDbFile:
                 l = lambda w: w.sendList(toGUIOnly=True)
                 self._roomManager.broadcast(watcher, l)
@@ -176,6 +181,7 @@ class SyncFactory(Factory):
         if watcher.getFile():
             l = lambda w: w.sendSetting(watcher.getName(), watcher.getRoom(), watcher.getFile(), None)
             self._roomManager.broadcast(watcher, l)
+            self._yapNoteFileChange(watcher.getRoom())
 
     def forcePositionUpdate(self, watcher, doSeek, watcherPauseState):
         room = watcher.getRoom()
@@ -214,6 +220,66 @@ class SyncFactory(Factory):
         messageDict = {"message": message, "username": watcher.getName()}
         self._roomManager.broadcastRoom(watcher, lambda w: w.sendChatMessage(messageDict))
 
+    def updateYapTimer(self, room, paused, watcher):
+        # Called on a genuine room pause/unpause. Accumulates pause time and, for clients that
+        # cannot render the live overlay, announces it via chat (skipped for "yapTimer" clients).
+        if not self.yapTimer or room is None:
+            return
+        room.yapResetIfFileChanged(self._getRoomFileKey(room))
+        if paused:
+            room.yapStartPause(watcher.getName())
+            self._broadcastYapToRoom(room, watcher.getName(), getMessage("yap-timer-paused-chat-message"))
+            self._startYapTicker(room)
+        else:
+            elapsed = room.yapEndPause()
+            self._stopYapTicker(room)
+            if elapsed is not None:
+                self._broadcastYapToRoom(
+                    room, watcher.getName(),
+                    getMessage("yap-timer-unpaused-chat-message").format(formatTime(elapsed), formatTime(room.yapTotal())))
+
+    def _getRoomFileKey(self, room):
+        # A value that changes when the room's current file changes, so the total can reset.
+        index = room.getPlaylistIndex()
+        playlist = room.getPlaylist()
+        if index is not None and playlist and 0 <= index < len(playlist):
+            return "index:{}:{}".format(index, playlist[index])
+        setBy = room.getSetBy()
+        file_ = setBy.getFile() if setBy else None
+        if isinstance(file_, dict):
+            return "file:{}".format(file_.get("name", ""))
+        if file_:
+            return "file:{}".format(file_)
+        return None
+
+    def _yapNoteFileChange(self, room):
+        if self.yapTimer and room is not None:
+            room.yapResetIfFileChanged(self._getRoomFileKey(room))
+
+    def _broadcastYapToRoom(self, room, username, message):
+        messageDict = {"message": message, "username": username}
+        for receiver in room.getWatchers():
+            receiver.sendChatMessage(messageDict, skipIfSupportsFeature="yapTimer")
+
+    def _startYapTicker(self, room):
+        self._stopYapTicker(room)
+        room._yapTickTimer = task.LoopingCall(self._yapTick, room)
+        room._yapTickTimer.start(constants.YAP_TIMER_UPDATE_INTERVAL, now=False)
+
+    def _stopYapTicker(self, room):
+        if room._yapTickTimer is not None:
+            if room._yapTickTimer.running:
+                room._yapTickTimer.stop()
+            room._yapTickTimer = None
+
+    def _yapTick(self, room):
+        if not room.isPaused() or room.isEmpty():
+            self._stopYapTicker(room)
+            return
+        self._broadcastYapToRoom(
+            room, room.yapPausedByName() or "",
+            getMessage("yap-timer-ongoing-chat-message").format(formatTime(room.yapCurrentElapsed()), formatTime(room.yapTotal())))
+
     def setReady(self, watcher, isReady, manuallyInitiated=True, username=None):
         if username and username != watcher.getName():
             room = watcher.getRoom()
@@ -245,6 +311,7 @@ class SyncFactory(Factory):
         if room.canControl(watcher):
             watcher.getRoom().setPlaylistIndex(index, watcher)
             self._roomManager.broadcastRoom(watcher, lambda w: w.setPlaylistIndex(watcher.getName(), index))
+            self._yapNoteFileChange(room)
         else:
             watcher.setPlaylistIndex(room.getName(), room.getPlaylistIndex())
 
@@ -548,6 +615,11 @@ class Room(object):
         self._lastSavedUpdate = 0
         self._position = 0
         self._permanent = False
+        self._yapPauseStartedAt = None  # Wall-clock time the current pause began (None while playing)
+        self._yapTotalThisFile = 0.0  # Accumulated duration of completed pauses for the current file
+        self._yapCurrentFileKey = None  # Identifies the current file; total resets when this changes
+        self._yapPausedByName = None  # Username that started the current pause (for chat attribution)
+        self._yapTickTimer = None  # LoopingCall broadcasting periodic "still paused" updates
 
     def __str__(self, *args, **kwargs):
         return self.getName()
@@ -627,6 +699,39 @@ class Room(object):
 
     def isPaused(self):
         return self._playState == self.STATE_PAUSED
+
+    def yapStartPause(self, pausedByName=None):
+        if self._yapPauseStartedAt is None:
+            self._yapPauseStartedAt = time.time()
+            self._yapPausedByName = pausedByName
+
+    def yapEndPause(self):
+        if self._yapPauseStartedAt is None:
+            return None
+        elapsed = time.time() - self._yapPauseStartedAt
+        self._yapTotalThisFile += elapsed
+        self._yapPauseStartedAt = None
+        return elapsed
+
+    def yapCurrentElapsed(self):
+        if self._yapPauseStartedAt is None:
+            return 0.0
+        return time.time() - self._yapPauseStartedAt
+
+    def yapTotal(self):
+        return self._yapTotalThisFile + self.yapCurrentElapsed()
+
+    def yapPausedByName(self):
+        return self._yapPausedByName
+
+    def yapReset(self):
+        self._yapTotalThisFile = 0.0
+        self._yapPauseStartedAt = None
+
+    def yapResetIfFileChanged(self, fileKey):
+        if fileKey != self._yapCurrentFileKey:
+            self.yapReset()
+            self._yapCurrentFileKey = fileKey
 
     def getWatchers(self):
         return list(self._watchers.values())
@@ -877,6 +982,8 @@ class Watcher(object):
         self._lastUpdatedOn = time.time()
         if pauseChanged:
             self.getRoom().setPaused(Room.STATE_PAUSED if paused else Room.STATE_PLAYING, self)
+            if self.getRoom().canControl(self):
+                self._server.updateYapTimer(self.getRoom(), paused, self)
         if position is not None:
             position = self._updatePositionByAge(messageAge, paused, position)
             self.setPosition(position)
@@ -905,6 +1012,7 @@ class ConfigurationGetter(object):
         self._argparser.add_argument('--isolate-rooms', action='store_true', help=getMessage("server-isolate-room-argument"))
         self._argparser.add_argument('--disable-ready', action='store_true', help=getMessage("server-disable-ready-argument"))
         self._argparser.add_argument('--disable-chat', action='store_true', help=getMessage("server-chat-argument"))
+        self._argparser.add_argument('--yap-timer', action='store_true', help=getMessage("server-yap-timer-argument"))
         self._argparser.add_argument('--salt', metavar='salt', type=str, nargs='?', help=getMessage("server-salt-argument"), default=os.environ.get('SYNCPLAY_SALT'))
         self._argparser.add_argument('--motd-file', metavar='file', type=str, nargs='?', help=getMessage("server-motd-argument"))
         self._argparser.add_argument('--rooms-db-file', metavar='rooms', type=str, nargs='?', help=getMessage("server-rooms-argument"))

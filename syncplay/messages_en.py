@@ -488,6 +488,11 @@ en = {
     "persistent-rooms-notice": "NOTICE: This server uses persistent rooms, which means that the playlist information is stored between playback sessions. If you want to create a room where information is not saved then put -temp at the end of the room name.", # NOTE: Do not translate the word -temp
     "ready-chat-message": "I have set {} as ready.", # User
     "not-ready-chat-message": "I have set {} as not ready.", # User
+    "yap-timer-paused-chat-message": "paused - yap timer running", # Prefixed with <username> who paused
+    "yap-timer-ongoing-chat-message": "still paused - {} this pause ({} total)", # Current pause duration, total pause time for file
+    "yap-timer-unpaused-chat-message": "unpaused - yapped for {} ({} total this file)", # This pause duration, total pause time for file
+    "yap-timer-osd-paused-message": "Yap timer: {} (total {})", # Live overlay: current pause duration, total pause time for file
+    "yap-timer-osd-total-message": "Total yapped this file: {}", # Overlay shown briefly on resume: total pause time for file
 
     # Server notifications
     "welcome-server-notification": "Welcome to Syncplay server, ver. {0}",  # version
@@ -508,6 +513,7 @@ en = {
     "server-rooms-argument": "path to database file to use and/or create to store persistent room data. Enables rooms to persist without watchers and through restarts",
     "server-permanent-rooms-argument": "path to file which lists permanent rooms that will be listed even if the room is empty (in the form of a text file which lists one room per line) - requires persistent rooms to be enabled",
     "server-chat-argument": "Should chat be disabled?",
+    "server-yap-timer-argument": "enable the yap timer: track and show how long each room spends paused (per file)",
     "server-chat-maxchars-argument": "Maximum number of characters in a chat message (default is {})", # Default number of characters
     "server-maxusernamelength-argument": "Maximum number of characters in a username (default is {})",
     "server-stats-db-file-argument": "Enable server stats using the SQLite db file provided",

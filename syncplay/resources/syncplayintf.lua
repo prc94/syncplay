@@ -45,6 +45,7 @@ local NEUTRAL_ALERT_TEXT_COLOUR = "FFFFFF" -- RBG
 local BAD_ALERT_TEXT_COLOUR = "0000FF"  -- RBG
 local GOOD_ALERT_TEXT_COLOUR = "00FF00" -- RBG
 local NOTIFICATION_TEXT_COLOUR = "FFFF00" -- RBG
+local YAPTIMER_TEXT_COLOUR = "00FFFF" -- RBG
 
 local FONT_SIZE_MULTIPLIER = 2
 
@@ -122,6 +123,15 @@ function set_notification_osd(osd_message, mood)
     notification_osd_mood = mood
 end
 
+local yaptimer_osd = ""
+local last_yaptimer_osd_time = nil
+local YAPTIMER_OSD_TIMEOUT = 3.5  -- Hides this long after the last update (Syncplay refreshes it every ~1s while paused)
+
+function set_yaptimer_osd(osd_message)
+    yaptimer_osd = osd_message
+    last_yaptimer_osd_time = mp.get_time()
+end
+
 function add_chat(chat_message, mood)
     last_chat_time = mp.get_time()
     local entry = #chat_log+1
@@ -154,9 +164,13 @@ function chat_update()
             clear_chat()
         end
     end
+    incrementRow,to_add = process_yaptimer_osd()
+    if to_add ~= nil and to_add ~= "" then
+        chat_ass = chat_ass .. to_add
+    end
     rowsAdded,to_add = process_alert_osd()
     if to_add ~= nil and to_add ~= "" then
-        chat_ass = to_add
+        chat_ass = chat_ass .. to_add
     end
     incrementRow,to_add = process_notification_osd(rowsAdded)
     rowsAdded = rowsAdded + incrementRow
@@ -243,6 +257,19 @@ function process_notification_osd(startRow)
     return rowsCreated, stringToAdd
 end
 
+
+function process_yaptimer_osd()
+    local rowsCreated = 0
+    local stringToAdd = ""
+    if yaptimer_osd ~= "" and last_yaptimer_osd_time ~= nil and mp.get_time() - last_yaptimer_osd_time < YAPTIMER_OSD_TIMEOUT then
+        local messageColour = "{\\1c&H"..YAPTIMER_TEXT_COLOUR.."}"
+        local messageString = wordwrapify_string(yaptimer_osd)
+        messageString = messageColour..messageString
+        stringToAdd = format_chatroom(messageString)
+        rowsCreated = 1
+    end
+    return rowsCreated, stringToAdd
+end
 
 function process_chat_item(i, rowsAdded)
     if opts['chatOutputMode'] == CHAT_MODE_CHATROOM then
@@ -348,6 +375,12 @@ end)
 
 mp.register_script_message('notification-osd-good', function(e)
     set_notification_osd(e,MOOD_GOOD)
+end)
+
+-- Yap timer OSD
+
+mp.register_script_message('yaptimer-osd', function(e)
+    set_yaptimer_osd(e)
 end)
 
 --

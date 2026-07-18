@@ -286,6 +286,9 @@ class SyncClientProtocol(JSONCommandProtocol):
             position, paused, doSeek, setBy = self._extractStatePlaystateArguments(state)
         if "ping" in state:
             messageAge, latencyCalculation = self._handleStatePing(state)
+        if "yapTimer" in state:
+            yap = state["yapTimer"]
+            self._client.ui.updateYapTimer(yap.get("paused", False), yap.get("current", 0), yap.get("total", 0))
         if position is not None and paused is not None and not self.clientIgnoringOnTheFly:
             self._client.updateGlobalState(position, paused, doSeek, setBy, messageAge)
         position, paused, doSeek, stateChange = self._client.getLocalState()
@@ -742,6 +745,13 @@ class SyncServerProtocol(JSONCommandProtocol):
                  "ping": ping,
                  "playstate": playstate,
                 }
+        if self._factory.yapTimer and self._watcher and self._watcher.getRoom() and self._watcher.supportsFeature("yapTimer"):
+            room = self._watcher.getRoom()
+            state["yapTimer"] = {
+                "paused": room.isPaused(),
+                "current": room.yapCurrentElapsed(),
+                "total": room.yapTotal(),
+            }
         if forced:
             self.serverIgnoringOnTheFly += 1
         if self.serverIgnoringOnTheFly or self.clientIgnoringOnTheFly:

@@ -3,6 +3,9 @@ from syncplay import constants
 
 class BasePlayer(object):
 
+    # Players that can render the live yap-timer overlay set this True and override updateYapTimerOSD.
+    yapTimerOSDSupported = False
+
     '''
     This method is supposed to
     execute updatePlayerStatus(paused, position) on client
@@ -10,6 +13,13 @@ class BasePlayer(object):
     '''
     def askForStatus(self):
         raise NotImplementedError()
+
+    '''
+    Show/refresh the persistent yap-timer overlay with the given text (empty string hides it).
+    No-op for players that do not support it.
+    '''
+    def updateYapTimerOSD(self, text):
+        pass
 
     '''
     Display given message on player's OSD or similar means

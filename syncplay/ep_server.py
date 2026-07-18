@@ -52,7 +52,8 @@ def main():
         args.max_chat_message_length,
         args.max_username_length,
         args.stats_db_file,
-        args.tls
+        args.tls,
+        args.yap_timer
     )
 
     if args.ipv6_only is True:

@@ -27,6 +27,7 @@ class MpvPlayer(BasePlayer):
     lastMPVPositionUpdate = None
     alertOSDSupported = True
     chatOSDSupported = True
+    yapTimerOSDSupported = True
     speedSupported = True
     customOpenDialog = False
 
@@ -149,6 +150,14 @@ class MpvPlayer(BasePlayer):
         message = self._sanitizeText(message.replace("\\", constants.MPV_INPUT_BACKSLASH_SUBSTITUTE_CHARACTER))
         messageString = "<{}> {}".format(username, message)
         self._listener.sendLine(["script-message-to", "syncplayintf", "chat", messageString])
+
+    def updateYapTimerOSD(self, text):
+        # Persistent overlay handled by syncplayintf.lua; empty text hides it. Always uses the lua
+        # overlay (independent of chatOutputEnabled) so the timer can stay on screen while paused.
+        if getattr(self, "_listener", None) is None:
+            return
+        messageString = self._sanitizeText(text.replace("\\", constants.MPV_INPUT_BACKSLASH_SUBSTITUTE_CHARACTER))
+        self._listener.sendLine(["script-message-to", "syncplayintf", "yaptimer-osd", messageString])
 
     def setSpeed(self, value):
         self._setProperty('speed', "{:.2f}".format(value))
