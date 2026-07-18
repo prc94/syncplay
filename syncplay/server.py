@@ -25,10 +25,14 @@ from syncplay.utils import RoomPasswordProvider, NotControlledRoom, RandomString
 class SyncFactory(Factory):
     def __init__(self, port='', password='', motdFilePath=None, roomsDbFile=None, permanentRoomsFile=None, isolateRooms=False, salt=None,
                  disableReady=False, disableChat=False, maxChatMessageLength=constants.MAX_CHAT_MESSAGE_LENGTH,
-                 maxUsernameLength=constants.MAX_USERNAME_LENGTH, statsDbFile=None, tlsCertPath=None, yapTimer=False):
+                 maxUsernameLength=constants.MAX_USERNAME_LENGTH, statsDbFile=None, tlsCertPath=None, yapTimer=False,
+                 pauseWarningAfter=0, pauseWarningInterval=0, pauseWarningMessage=None):
         self.isolateRooms = isolateRooms
         self.yapTimer = yapTimer
         syncplay.messages.setLanguage(syncplay.messages.getInitialLanguage())
+        self.pauseWarningAfter = pauseWarningAfter if pauseWarningAfter else 0  # Secs; 0/None = feature off
+        self.pauseWarningInterval = pauseWarningInterval if pauseWarningInterval else self.pauseWarningAfter  # Chat re-remind cadence
+        self.pauseWarningMessage = pauseWarningMessage if pauseWarningMessage else getMessage("pause-warning-default-message")
         print(getMessage("welcome-server-notification").format(syncplay.version))
         self.port = port
         if password:
@@ -160,6 +164,7 @@ class SyncFactory(Factory):
             self._roomManager.removeWatcher(watcher)
             if room.isEmpty():
                 self._stopYapTicker(room)
+                self._stopPauseWarningTimer(room)
                 room.yapReset()
             if self.roomsDbFile:
                 l = lambda w: w.sendList(toGUIOnly=True)
@@ -279,6 +284,61 @@ class SyncFactory(Factory):
         self._broadcastYapToRoom(
             room, room.yapPausedByName() or "",
             getMessage("yap-timer-ongoing-chat-message").format(formatTime(room.yapCurrentElapsed()), formatTime(room.yapTotal())))
+
+    def updatePauseWarning(self, room, paused, watcher):
+        # Warn the room when a single pause exceeds the threshold. Capable clients blink an OSD alert
+        # (via state["pauseWarning"] in sendState); everyone else gets a periodic chat fallback.
+        if not self.pauseWarningAfter or room is None:
+            return
+        if paused:
+            room.yapStartPause(watcher.getName())  # shared pause clock (idempotent with the yap timer)
+            self._startPauseWarningTimer(room)
+        else:
+            self._stopPauseWarningTimer(room)
+            room.yapEndPause()
+
+    def pauseWarningText(self, room):
+        # Operator message, with an optional "{}" filled by the current pause duration (shown verbatim
+        # if it has no placeholder, or if formatting the operator's text would fail).
+        try:
+            return self.pauseWarningMessage.format(formatTime(room.yapCurrentElapsed()))
+        except (IndexError, KeyError, ValueError):
+            return self.pauseWarningMessage
+
+    def _startPauseWarningTimer(self, room):
+        self._stopPauseWarningTimer(room)
+        room._pauseWarningDelayed = reactor.callLater(self.pauseWarningAfter, self._firePauseWarning, room)
+
+    def _firePauseWarning(self, room):
+        room._pauseWarningDelayed = None
+        if not room.isPaused() or room.isEmpty():
+            return
+        room._pauseWarningActive = True  # capable clients start blinking on the next State tick
+        self._broadcastPauseWarningChat(room)
+        room._pauseWarningTimer = task.LoopingCall(self._repeatPauseWarning, room)
+        room._pauseWarningTimer.start(self.pauseWarningInterval, now=False)
+
+    def _repeatPauseWarning(self, room):
+        if not room.isPaused() or room.isEmpty():
+            self._stopPauseWarningTimer(room)
+            return
+        self._broadcastPauseWarningChat(room)
+
+    def _stopPauseWarningTimer(self, room):
+        room._pauseWarningActive = False
+        if room._pauseWarningDelayed is not None:
+            if room._pauseWarningDelayed.active():
+                room._pauseWarningDelayed.cancel()
+            room._pauseWarningDelayed = None
+        if room._pauseWarningTimer is not None:
+            if room._pauseWarningTimer.running:
+                room._pauseWarningTimer.stop()
+            room._pauseWarningTimer = None
+
+    def _broadcastPauseWarningChat(self, room):
+        messageDict = {"message": self.pauseWarningText(room), "username": room.yapPausedByName() or ""}
+        for receiver in room.getWatchers():
+            receiver.sendChatMessage(messageDict, skipIfSupportsFeature="pauseWarning")
 
     def setReady(self, watcher, isReady, manuallyInitiated=True, username=None):
         if username and username != watcher.getName():
@@ -620,6 +680,9 @@ class Room(object):
         self._yapCurrentFileKey = None  # Identifies the current file; total resets when this changes
         self._yapPausedByName = None  # Username that started the current pause (for chat attribution)
         self._yapTickTimer = None  # LoopingCall broadcasting periodic "still paused" updates
+        self._pauseWarningDelayed = None  # DelayedCall for the first pause warning (at the threshold)
+        self._pauseWarningTimer = None  # LoopingCall re-reminding (chat fallback) while over the threshold
+        self._pauseWarningActive = False  # True while the current pause is over the threshold (drives the blinking OSD)
 
     def __str__(self, *args, **kwargs):
         return self.getName()
@@ -984,6 +1047,7 @@ class Watcher(object):
             self.getRoom().setPaused(Room.STATE_PAUSED if paused else Room.STATE_PLAYING, self)
             if self.getRoom().canControl(self):
                 self._server.updateYapTimer(self.getRoom(), paused, self)
+                self._server.updatePauseWarning(self.getRoom(), paused, self)
         if position is not None:
             position = self._updatePositionByAge(messageAge, paused, position)
             self.setPosition(position)
@@ -1013,6 +1077,9 @@ class ConfigurationGetter(object):
         self._argparser.add_argument('--disable-ready', action='store_true', help=getMessage("server-disable-ready-argument"))
         self._argparser.add_argument('--disable-chat', action='store_true', help=getMessage("server-chat-argument"))
         self._argparser.add_argument('--yap-timer', action='store_true', help=getMessage("server-yap-timer-argument"))
+        self._argparser.add_argument('--pause-warning-after', metavar='seconds', type=int, nargs='?', help=getMessage("server-pause-warning-after-argument"))
+        self._argparser.add_argument('--pause-warning-interval', metavar='seconds', type=int, nargs='?', help=getMessage("server-pause-warning-interval-argument"))
+        self._argparser.add_argument('--pause-warning-message', metavar='message', type=str, nargs='?', help=getMessage("server-pause-warning-message-argument"))
         self._argparser.add_argument('--salt', metavar='salt', type=str, nargs='?', help=getMessage("server-salt-argument"), default=os.environ.get('SYNCPLAY_SALT'))
         self._argparser.add_argument('--motd-file', metavar='file', type=str, nargs='?', help=getMessage("server-motd-argument"))
         self._argparser.add_argument('--rooms-db-file', metavar='rooms', type=str, nargs='?', help=getMessage("server-rooms-argument"))

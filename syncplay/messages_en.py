@@ -493,6 +493,7 @@ en = {
     "yap-timer-unpaused-chat-message": "unpaused - yapped for {} ({} total this file)", # This pause duration, total pause time for file
     "yap-timer-osd-paused-message": "Yap timer: {} (total {})", # Live overlay: current pause duration, total pause time for file
     "yap-timer-osd-total-message": "Total yapped this file: {}", # Overlay shown briefly on resume: total pause time for file
+    "pause-warning-default-message": "Paused for {} - please resume when ready", # Default --pause-warning-message; optional {} = pause duration
 
     # Server notifications
     "welcome-server-notification": "Welcome to Syncplay server, ver. {0}",  # version
@@ -514,6 +515,9 @@ en = {
     "server-permanent-rooms-argument": "path to file which lists permanent rooms that will be listed even if the room is empty (in the form of a text file which lists one room per line) - requires persistent rooms to be enabled",
     "server-chat-argument": "Should chat be disabled?",
     "server-yap-timer-argument": "enable the yap timer: track and show how long each room spends paused (per file)",
+    "server-pause-warning-after-argument": "warn a room when a single pause exceeds this many seconds (0/unset = off); blinking OSD on supported players, chat elsewhere",
+    "server-pause-warning-interval-argument": "how often (seconds) to repeat the pause warning chat while still paused (default: same as --pause-warning-after)",
+    "server-pause-warning-message-argument": "custom pause-warning text; include {} to insert the pause duration",
     "server-chat-maxchars-argument": "Maximum number of characters in a chat message (default is {})", # Default number of characters
     "server-maxusernamelength-argument": "Maximum number of characters in a username (default is {})",
     "server-stats-db-file-argument": "Enable server stats using the SQLite db file provided",

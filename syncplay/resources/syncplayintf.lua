@@ -46,6 +46,7 @@ local BAD_ALERT_TEXT_COLOUR = "0000FF"  -- RBG
 local GOOD_ALERT_TEXT_COLOUR = "00FF00" -- RBG
 local NOTIFICATION_TEXT_COLOUR = "FFFF00" -- RBG
 local YAPTIMER_TEXT_COLOUR = "00FFFF" -- RBG
+local PAUSEWARNING_TEXT_COLOUR = "0000FF" -- RBG (red - warning)
 
 local FONT_SIZE_MULTIPLIER = 2
 
@@ -132,6 +133,16 @@ function set_yaptimer_osd(osd_message)
     last_yaptimer_osd_time = mp.get_time()
 end
 
+local pausewarning_osd = ""
+local last_pausewarning_osd_time = nil
+local PAUSEWARNING_OSD_TIMEOUT = 2.5  -- Hides this long after the last update (server refreshes it every ~1s while over threshold)
+local PAUSEWARNING_BLINK_HALF_PERIOD = 0.4  -- Blink toggle interval (secs)
+
+function set_pausewarning_osd(osd_message)
+    pausewarning_osd = osd_message
+    last_pausewarning_osd_time = mp.get_time()
+end
+
 function add_chat(chat_message, mood)
     last_chat_time = mp.get_time()
     local entry = #chat_log+1
@@ -163,6 +174,10 @@ function chat_update()
         if timedelta >= opts['chatTimeout'] then
             clear_chat()
         end
+    end
+    incrementRow,to_add = process_pausewarning_osd()
+    if to_add ~= nil and to_add ~= "" then
+        chat_ass = chat_ass .. to_add
     end
     incrementRow,to_add = process_yaptimer_osd()
     if to_add ~= nil and to_add ~= "" then
@@ -267,6 +282,23 @@ function process_yaptimer_osd()
         messageString = messageColour..messageString
         stringToAdd = format_chatroom(messageString)
         rowsCreated = 1
+    end
+    return rowsCreated, stringToAdd
+end
+
+function process_pausewarning_osd()
+    local rowsCreated = 0
+    local stringToAdd = ""
+    if pausewarning_osd ~= "" and last_pausewarning_osd_time ~= nil and mp.get_time() - last_pausewarning_osd_time < PAUSEWARNING_OSD_TIMEOUT then
+        -- Blink: only draw during the "on" half of each toggle period.
+        local blink_on = (math.floor(mp.get_time() / PAUSEWARNING_BLINK_HALF_PERIOD) % 2) == 0
+        if blink_on then
+            local messageColour = "{\\1c&H"..PAUSEWARNING_TEXT_COLOUR.."}"
+            local messageString = wordwrapify_string(pausewarning_osd)
+            messageString = messageColour..messageString
+            stringToAdd = format_chatroom(messageString)
+            rowsCreated = 1
+        end
     end
     return rowsCreated, stringToAdd
 end
@@ -381,6 +413,12 @@ end)
 
 mp.register_script_message('yaptimer-osd', function(e)
     set_yaptimer_osd(e)
+end)
+
+-- Pause warning OSD (blinking)
+
+mp.register_script_message('pausewarning-osd', function(e)
+    set_pausewarning_osd(e)
 end)
 
 --

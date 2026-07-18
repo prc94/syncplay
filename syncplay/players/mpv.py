@@ -28,6 +28,7 @@ class MpvPlayer(BasePlayer):
     alertOSDSupported = True
     chatOSDSupported = True
     yapTimerOSDSupported = True
+    pauseWarningOSDSupported = True
     speedSupported = True
     customOpenDialog = False
 
@@ -158,6 +159,14 @@ class MpvPlayer(BasePlayer):
             return
         messageString = self._sanitizeText(text.replace("\\", constants.MPV_INPUT_BACKSLASH_SUBSTITUTE_CHARACTER))
         self._listener.sendLine(["script-message-to", "syncplayintf", "yaptimer-osd", messageString])
+
+    def updatePauseWarningOSD(self, text):
+        # Blinking overlay handled by syncplayintf.lua; empty text hides it. Refreshed each state tick
+        # while the pause is over the threshold; the lua element auto-hides shortly after refreshes stop.
+        if getattr(self, "_listener", None) is None:
+            return
+        messageString = self._sanitizeText(text.replace("\\", constants.MPV_INPUT_BACKSLASH_SUBSTITUTE_CHARACTER))
+        self._listener.sendLine(["script-message-to", "syncplayintf", "pausewarning-osd", messageString])
 
     def setSpeed(self, value):
         self._setProperty('speed', "{:.2f}".format(value))

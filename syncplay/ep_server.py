@@ -53,7 +53,10 @@ def main():
         args.max_username_length,
         args.stats_db_file,
         args.tls,
-        args.yap_timer
+        args.yap_timer,
+        args.pause_warning_after,
+        args.pause_warning_interval,
+        args.pause_warning_message
     )
 
     if args.ipv6_only is True:

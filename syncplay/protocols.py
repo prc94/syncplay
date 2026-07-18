@@ -289,6 +289,8 @@ class SyncClientProtocol(JSONCommandProtocol):
         if "yapTimer" in state:
             yap = state["yapTimer"]
             self._client.ui.updateYapTimer(yap.get("paused", False), yap.get("current", 0), yap.get("total", 0))
+        if "pauseWarning" in state:
+            self._client.ui.updatePauseWarning(state["pauseWarning"].get("message", ""))
         if position is not None and paused is not None and not self.clientIgnoringOnTheFly:
             self._client.updateGlobalState(position, paused, doSeek, setBy, messageAge)
         position, paused, doSeek, stateChange = self._client.getLocalState()
@@ -752,6 +754,9 @@ class SyncServerProtocol(JSONCommandProtocol):
                 "current": room.yapCurrentElapsed(),
                 "total": room.yapTotal(),
             }
+        if self._factory.pauseWarningAfter and self._watcher and self._watcher.getRoom() \
+                and self._watcher.getRoom()._pauseWarningActive and self._watcher.supportsFeature("pauseWarning"):
+            state["pauseWarning"] = {"message": self._factory.pauseWarningText(self._watcher.getRoom())}
         if forced:
             self.serverIgnoringOnTheFly += 1
         if self.serverIgnoringOnTheFly or self.clientIgnoringOnTheFly:

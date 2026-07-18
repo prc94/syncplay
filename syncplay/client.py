@@ -118,6 +118,7 @@ class SyncplayClient(object):
         # Whether this client's player can render the live yap-timer overlay. Derived from the player
         # class (known now, before the player process starts) so it can be advertised in the Hello.
         self._yapTimerOSDSupported = getattr(playerClass, "yapTimerOSDSupported", False)
+        self._pauseWarningOSDSupported = getattr(playerClass, "pauseWarningOSDSupported", False)
         self._config = config
 
         self._running = False
@@ -748,6 +749,7 @@ class SyncplayClient(object):
         features["persistentRooms"] = True
         features["setOthersReadiness"] = True
         features["yapTimer"] = self._yapTimerOSDSupported  # Can render the live yap-timer overlay
+        features["pauseWarning"] = self._pauseWarningOSDSupported  # Can render the blinking pause-warning OSD
 
         return features
 
@@ -1728,6 +1730,12 @@ class UiManager(object):
             self._yapTimerWasPaused = False
             text = getMessage("yap-timer-osd-total-message").format(utils.formatTime(total))
             self._client._player.updateYapTimerOSD(text)
+
+    def updatePauseWarning(self, message):
+        # Server sends this only while a pause is over the threshold; the player's overlay blinks it and
+        # auto-hides shortly after the server stops sending it (on resume). No client-side clear needed.
+        if self._client._player:
+            self._client._player.updatePauseWarningOSD(message)
 
     def showChatMessage(self, username, userMessage):
         messageString = "<{}> {}".format(username, userMessage)

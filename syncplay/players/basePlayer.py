@@ -5,6 +5,8 @@ class BasePlayer(object):
 
     # Players that can render the live yap-timer overlay set this True and override updateYapTimerOSD.
     yapTimerOSDSupported = False
+    # Players that can render the blinking pause-warning overlay set this True and override updatePauseWarningOSD.
+    pauseWarningOSDSupported = False
 
     '''
     This method is supposed to
@@ -19,6 +21,13 @@ class BasePlayer(object):
     No-op for players that do not support it.
     '''
     def updateYapTimerOSD(self, text):
+        pass
+
+    '''
+    Show/refresh the blinking pause-warning overlay with the given text (empty string hides it).
+    No-op for players that do not support it.
+    '''
+    def updatePauseWarningOSD(self, text):
         pass
 
     '''
