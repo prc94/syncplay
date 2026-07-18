@@ -747,16 +747,19 @@ class SyncServerProtocol(JSONCommandProtocol):
                  "ping": ping,
                  "playstate": playstate,
                 }
-        if self._factory.yapTimer and self._watcher and self._watcher.getRoom() and self._watcher.supportsFeature("yapTimer"):
-            room = self._watcher.getRoom()
+        room = self._watcher.getRoom() if self._watcher else None
+        # This 1s tick doubles as the lazy check that trips the give-up state once a single
+        # pause exceeds YAP_TIMER_MAX_PAUSE; while expired, neither field is sent.
+        yapExpired = room.yapCheckExpired() if room else False
+        if self._factory.yapTimer and room and not yapExpired and self._watcher.supportsFeature("yapTimer"):
             state["yapTimer"] = {
                 "paused": room.isPaused(),
                 "current": room.yapCurrentElapsed(),
                 "total": room.yapTotal(),
             }
-        if self._factory.pauseWarningAfter and self._watcher and self._watcher.getRoom() \
-                and self._watcher.getRoom()._pauseWarningActive and self._watcher.supportsFeature("pauseWarning"):
-            state["pauseWarning"] = {"message": self._factory.pauseWarningText(self._watcher.getRoom())}
+        if self._factory.pauseWarningAfter and room and room._pauseWarningActive \
+                and not yapExpired and self._watcher.supportsFeature("pauseWarning"):
+            state["pauseWarning"] = {"message": self._factory.pauseWarningText(room)}
         if forced:
             self.serverIgnoringOnTheFly += 1
         if self.serverIgnoringOnTheFly or self.clientIgnoringOnTheFly:

@@ -108,6 +108,24 @@ crossed, repeated every `--pause-warning-interval` seconds until resume.
 
 ---
 
+## The one-hour give-up
+
+A pause that lasts a whole hour is not a discussion — the session is stale.
+When a **single pause exceeds 1 hour**, both features give up:
+
+* The yap timer **resets** (the per-file total is wiped and the runaway pause
+  is discarded) and **turns off** — the overlay disappears, chat updates stop,
+  and no "unpaused - yapped for ..." summary is sent on the eventual resume.
+* The pause warning **stops** — no more blinking, no more chat reminders.
+
+Everything stays quiet until the **next pause begins**, which starts fresh
+(counting from 00:00 with a total of 00:00).
+
+Note: because of this cap, a `--pause-warning-after` threshold of 3600 seconds
+or more will never fire.
+
+---
+
 ## Notes for server operators
 
 * Both features are **per room**; nothing leaks between rooms (including with

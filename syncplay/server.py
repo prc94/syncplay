@@ -278,7 +278,7 @@ class SyncFactory(Factory):
             room._yapTickTimer = None
 
     def _yapTick(self, room):
-        if not room.isPaused() or room.isEmpty():
+        if not room.isPaused() or room.isEmpty() or room.yapCheckExpired():
             self._stopYapTicker(room)
             return
         self._broadcastYapToRoom(
@@ -311,7 +311,7 @@ class SyncFactory(Factory):
 
     def _firePauseWarning(self, room):
         room._pauseWarningDelayed = None
-        if not room.isPaused() or room.isEmpty():
+        if not room.isPaused() or room.isEmpty() or room.yapCheckExpired():
             return
         room._pauseWarningActive = True  # capable clients start blinking on the next State tick
         self._broadcastPauseWarningChat(room)
@@ -319,7 +319,7 @@ class SyncFactory(Factory):
         room._pauseWarningTimer.start(self.pauseWarningInterval, now=False)
 
     def _repeatPauseWarning(self, room):
-        if not room.isPaused() or room.isEmpty():
+        if not room.isPaused() or room.isEmpty() or room.yapCheckExpired():
             self._stopPauseWarningTimer(room)
             return
         self._broadcastPauseWarningChat(room)
@@ -683,6 +683,7 @@ class Room(object):
         self._pauseWarningDelayed = None  # DelayedCall for the first pause warning (at the threshold)
         self._pauseWarningTimer = None  # LoopingCall re-reminding (chat fallback) while over the threshold
         self._pauseWarningActive = False  # True while the current pause is over the threshold (drives the blinking OSD)
+        self._yapExpired = False  # True once the current pause exceeds YAP_TIMER_MAX_PAUSE; everything stays quiet until the next pause
 
     def __str__(self, *args, **kwargs):
         return self.getName()
@@ -767,14 +768,30 @@ class Room(object):
         if self._yapPauseStartedAt is None:
             self._yapPauseStartedAt = time.time()
             self._yapPausedByName = pausedByName
+            self._yapExpired = False  # a new pause starts with a clean slate
 
     def yapEndPause(self):
         if self._yapPauseStartedAt is None:
+            return None
+        if self._yapExpired:
+            # The pause outlived YAP_TIMER_MAX_PAUSE: discard it entirely (no accumulation,
+            # and returning None suppresses the unpause summary).
+            self._yapPauseStartedAt = None
             return None
         elapsed = time.time() - self._yapPauseStartedAt
         self._yapTotalThisFile += elapsed
         self._yapPauseStartedAt = None
         return elapsed
+
+    def yapCheckExpired(self):
+        # Lazily trip the give-up state once a single pause exceeds the cap: wipe the per-file
+        # total and stay quiet (no overlay/chat/summary) until the next pause rearms via
+        # yapStartPause. The wall-clock start is kept so nothing mid-pause reads a bogus duration.
+        if not self._yapExpired and self._yapPauseStartedAt is not None \
+                and time.time() - self._yapPauseStartedAt >= constants.YAP_TIMER_MAX_PAUSE:
+            self._yapExpired = True
+            self._yapTotalThisFile = 0.0
+        return self._yapExpired
 
     def yapCurrentElapsed(self):
         if self._yapPauseStartedAt is None:
@@ -790,6 +807,7 @@ class Room(object):
     def yapReset(self):
         self._yapTotalThisFile = 0.0
         self._yapPauseStartedAt = None
+        self._yapExpired = False
 
     def yapResetIfFileChanged(self, fileKey):
         if fileKey != self._yapCurrentFileKey:

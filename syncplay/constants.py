@@ -78,6 +78,7 @@ RECONNECT_RETRIES = 999
 SERVER_STATE_INTERVAL = 1
 SERVER_STATS_SNAPSHOT_INTERVAL = 3600
 YAP_TIMER_UPDATE_INTERVAL = 60  # Secs between server "still paused" yap-timer chat updates (fallback clients)
+YAP_TIMER_MAX_PAUSE = 3600  # Secs - after a single pause lasts this long, the yap timer and pause warning give up (reset + go quiet) until the next pause
 WARNING_OSD_MESSAGES_LOOP_INTERVAL = 1
 AUTOPLAY_DELAY = 3.0
 DO_NOT_RESET_POSITION_THRESHOLD = 1.0
