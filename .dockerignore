@@ -1,0 +1,25 @@
+# Keep the build context to what the server image needs
+.git
+.github
+docs
+ci
+buildPy2exe.py
+buildPy2app.py
+appdmg.py
+GNUmakefile
+Makefile
+MANIFEST.in
+setup.py
+vlc-help.txt
+requirements_gui.txt
+CLAUDE.md
+Dockerfile
+.dockerignore
+
+# Python build junk
+**/__pycache__
+**/*.py[co]
+*.egg-info
+build
+dist
+venv

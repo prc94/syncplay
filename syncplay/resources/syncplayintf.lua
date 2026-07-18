@@ -136,7 +136,8 @@ end
 local pausewarning_osd = ""
 local last_pausewarning_osd_time = nil
 local PAUSEWARNING_OSD_TIMEOUT = 2.5  -- Hides this long after the last update (server refreshes it every ~1s while over threshold)
-local PAUSEWARNING_BLINK_HALF_PERIOD = 0.4  -- Blink toggle interval (secs)
+local PAUSEWARNING_BLINK_CYCLE = 1.6  -- Full blink cycle length (secs)
+local PAUSEWARNING_BLINK_ON_TIME = 1.2  -- Visible portion of each cycle (secs) - mostly on, brief dip
 
 function set_pausewarning_osd(osd_message)
     pausewarning_osd = osd_message
@@ -175,14 +176,6 @@ function chat_update()
             clear_chat()
         end
     end
-    incrementRow,to_add = process_pausewarning_osd()
-    if to_add ~= nil and to_add ~= "" then
-        chat_ass = chat_ass .. to_add
-    end
-    incrementRow,to_add = process_yaptimer_osd()
-    if to_add ~= nil and to_add ~= "" then
-        chat_ass = chat_ass .. to_add
-    end
     rowsAdded,to_add = process_alert_osd()
     if to_add ~= nil and to_add ~= "" then
         chat_ass = chat_ass .. to_add
@@ -200,6 +193,16 @@ function chat_update()
                 chat_ass = chat_ass .. to_add
             end
         end
+    end
+
+    -- Syncplay pause-warning / yap-timer rows render below all original OSD entries
+    incrementRow,to_add = process_pausewarning_osd()
+    if to_add ~= nil and to_add ~= "" then
+        chat_ass = chat_ass .. to_add
+    end
+    incrementRow,to_add = process_yaptimer_osd()
+    if to_add ~= nil and to_add ~= "" then
+        chat_ass = chat_ass .. to_add
     end
 
     local xpos = opts['chatLeftMargin']
@@ -290,8 +293,8 @@ function process_pausewarning_osd()
     local rowsCreated = 0
     local stringToAdd = ""
     if pausewarning_osd ~= "" and last_pausewarning_osd_time ~= nil and mp.get_time() - last_pausewarning_osd_time < PAUSEWARNING_OSD_TIMEOUT then
-        -- Blink: only draw during the "on" half of each toggle period.
-        local blink_on = (math.floor(mp.get_time() / PAUSEWARNING_BLINK_HALF_PERIOD) % 2) == 0
+        -- Gentle blink: visible for most of each cycle, with a brief off-dip.
+        local blink_on = (mp.get_time() % PAUSEWARNING_BLINK_CYCLE) < PAUSEWARNING_BLINK_ON_TIME
         if blink_on then
             local messageColour = "{\\1c&H"..PAUSEWARNING_TEXT_COLOUR.."}"
             local messageString = wordwrapify_string(pausewarning_osd)
