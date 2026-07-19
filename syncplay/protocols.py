@@ -215,12 +215,17 @@ class SyncClientProtocol(JSONCommandProtocol):
                 self._client.setUserFeatures(values["username"], values['features'])
             elif command == "osdMessage":
                 self._client.ui.showGenericOSD(values)
+            elif command == "trackProposal":
+                self._client.ui.setTrackProposal(values)
 
     def sendFeaturesUpdate(self, features):
         self.sendSet({"features": features})
 
     def sendAdminAuth(self, password):
         self.sendSet({"adminAuth": {"password": password}})
+
+    def sendTrackProposal(self, payload):
+        self.sendSet({"trackProposal": payload})
 
     def sendSet(self, setting):
         self.sendMessage({"Set": setting})
@@ -625,6 +630,8 @@ class SyncServerProtocol(JSONCommandProtocol):
             elif command == "adminAuth":
                 password = set_[1].get("password") if isinstance(set_[1], dict) else None
                 self._factory.authAdmin(self._watcher, password)
+            elif command == "trackProposal":
+                self._factory.setTrackProposal(self._watcher, set_[1])
 
     def sendSet(self, setting):
         self.sendMessage({"Set": setting})

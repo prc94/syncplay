@@ -85,6 +85,13 @@ ADMIN_COMMAND = "/admin"  # /admin <password> - authenticate as server admin
 LOCK_COMMAND = "/lock"  # Admin: lock the current plain room (only admins control playback)
 UNLOCK_COMMAND = "/unlock"  # Admin: unlock the current room
 
+# Admin track proposals (recommended default audio/sub tracks)
+TRACK_PROPOSAL_COMMAND = "/tracks"  # Publish current tracks as the room recommendation (admin, compatible player)
+TRACK_PROPOSAL_MAX_NAME_LENGTH = 60
+TRACK_PROPOSAL_MAX_ID = 99
+TRACK_PROPOSAL_MAX_SIGNATURE_LENGTH = 500  # Opaque layout-signature string from the publisher's lua
+MPV_PUBLISH_TRACKS_KEY = "Ctrl+t"  # Default hotkey; rebindable via script binding "syncplay_publish_tracks"
+
 # Generic OSD message channel (server -> capable clients; chat fallback for the rest)
 OSD_MESSAGE_COMMAND = "/osd"  # Chat prefix intercepted server-side (room operators and server admins)
 OSD_MESSAGE_DEFAULT_DURATION = 5.0  # Secs
@@ -159,6 +166,7 @@ COMMANDS_DELETE = ['delete', 'd', 'qd']
 COMMANDS_NEXT = ["next", "qn"]
 COMMANDS_SETREADY = ['setready', 'sr']
 COMMANDS_SETNOTREADY = ['setready', 'snr']
+COMMANDS_TRACKS = ['tracks']
 MPC_MIN_VER = "1.6.4"
 MPC_BE_MIN_VER = "1.5.2.3123"
 VLC_MIN_VERSION = "2.2.1"

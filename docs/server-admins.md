@@ -56,6 +56,31 @@ Locked state is **runtime-only**: it does not survive a server restart, and it e
 empties. If the only admin disconnects, the room stays locked (position extrapolates) until an
 admin returns and `/unlock`s it.
 
+## Recommended tracks
+
+An admin can publish their **current audio + subtitle selection** as the room's recommended
+default. Publication is always explicit — switching tracks never publishes anything by itself.
+
+**Publishing** (admin on an mpv-family player): press **Ctrl+T** in mpv (rebindable via the
+`syncplay_publish_tracks` script binding in `input.conf`) or type **`/tracks`** into the Syncplay
+chat. The server confirms privately.
+
+**What others get:**
+
+* **Updated mpv-family clients:** a notification through the OSD message channel
+  ("Operator X recommends: audio #2 eng, subtitles off") and the recommendation is applied as the
+  **default**: immediately if their current file has the **same track layout**, and again on every
+  file they load that matches the layout (e.g. the next episode). Users can freely switch tracks
+  afterwards — a manual choice sticks for the current file, exactly like normal mpv track cycling.
+* **Other players / legacy clients:** the recommendation as a chat line, re-posted whenever the
+  room's file changes.
+
+Matching is **by track layout, never by filename** — different releases of the same content with
+identical audio/sub layouts match; unrelated files are left untouched. Users with a different
+file loaded (slow loads, browsing) are handled gracefully: the proposal is stored and applied
+when a matching file finally loads. Proposals persist until replaced and end when the room
+empties.
+
 ## Security notes
 
 * The password travels **in plain text** inside the chat command / auth message — run the server

@@ -31,6 +31,7 @@ class MpvPlayer(BasePlayer):
     yapTimerOSDSupported = True
     pauseWarningOSDSupported = True
     genericOSDSupported = True
+    trackProposalsSupported = True
     speedSupported = True
     customOpenDialog = False
 
@@ -186,6 +187,18 @@ class MpvPlayer(BasePlayer):
             "duration": duration,
         })
         self._listener.sendLine(["script-message-to", "syncplayintf", "osd-message", payload])
+
+    def setTrackProposal(self, payload):
+        # Storage/matching/application happen in syncplayintf.lua (layout-signature gated).
+        if getattr(self, "_listener", None) is None:
+            return
+        self._listener.sendLine(["script-message-to", "syncplayintf", "set-track-proposal", json.dumps(payload)])
+
+    def requestTrackPublish(self):
+        # Lua reads aid/sid + track-list and answers via the <SyncplayTrackProposal> print-text marker.
+        if getattr(self, "_listener", None) is None:
+            return
+        self._listener.sendLine(["script-message-to", "syncplayintf", "publish-tracks"])
 
     def setSpeed(self, value):
         self._setProperty('speed', "{:.2f}".format(value))
@@ -471,6 +484,14 @@ class MpvPlayer(BasePlayer):
         if "<chat>" in line:
             line = line.replace(constants.MPV_INPUT_BACKSLASH_SUBSTITUTE_CHARACTER, "\\")
             self._listener.sendChat(line[6:-7])
+
+        if "<SyncplayTrackProposal>" in line:
+            try:
+                payload = json.loads(line.split("<SyncplayTrackProposal>")[1].split("</SyncplayTrackProposal>")[0])
+            except (ValueError, IndexError):
+                payload = None
+            if isinstance(payload, dict):
+                self.reactor.callFromThread(self._client.publishTrackProposal, payload)
 
         if "<eof>" in line:
             self.eofDetected()

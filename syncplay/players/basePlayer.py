@@ -9,6 +9,8 @@ class BasePlayer(object):
     pauseWarningOSDSupported = False
     # Players that can render generic styled/ASS OSD messages set this True and override showGenericOSD.
     genericOSDSupported = False
+    # Players that can apply/publish admin track proposals set this True and override the two methods.
+    trackProposalsSupported = False
 
     '''
     This method is supposed to
@@ -38,6 +40,20 @@ class BasePlayer(object):
     size is an ASS \\fs value; duration is in seconds. No-op for players that do not support it.
     '''
     def showGenericOSD(self, text, isAss, assAlignment, colour, size, duration):
+        pass
+
+    '''
+    Hand an admin track proposal (audio/sub ids + layout signature) to the player, which applies
+    it when the local track layout matches. No-op for players that do not support it.
+    '''
+    def setTrackProposal(self, payload):
+        pass
+
+    '''
+    Ask the player to read its current track selection and publish it as a proposal (the result
+    comes back asynchronously via client.publishTrackProposal). No-op if unsupported.
+    '''
+    def requestTrackPublish(self):
         pass
 
     '''

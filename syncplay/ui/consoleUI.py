@@ -189,6 +189,8 @@ class ConsoleUI(threading.Thread):
             self._syncplayClient.identifyAsController(controlpassword)
         elif command.group('command') in constants.COMMANDS_TOGGLE:
             self._syncplayClient.toggleReady()
+        elif command.group('command') in constants.COMMANDS_TRACKS:
+            self._syncplayClient.requestTrackPublish()
         elif command.group('command') in constants.COMMANDS_QUEUE:
             filename = command.group('parameter')
             if filename is None:

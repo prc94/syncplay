@@ -153,6 +153,8 @@ class SyncFactory(Factory):
                 watcher.sendControlledRoomAuthStatus(True, controller, roomName)
         if watcher.isAdmin():
             self._broadcastAdminStatus(watcher)  # keep the operator icon in the new room
+        if room.getTrackProposal() is not None:
+            self._sendTrackProposalToWatcher(watcher, room.getTrackProposal())  # late joiners get the recommendation
 
     def sendRoomSwitchMessage(self, watcher):
         l = lambda w: w.sendSetting(watcher.getName(), watcher.getRoom(), None, None)
@@ -171,6 +173,7 @@ class SyncFactory(Factory):
                 self._stopYapTicker(room)
                 self._stopPauseWarningTimer(room)
                 room.yapReset()
+                room.setTrackProposal(None)
             if self.roomsDbFile:
                 l = lambda w: w.sendList(toGUIOnly=True)
                 self._roomManager.broadcast(watcher, l)
@@ -192,6 +195,7 @@ class SyncFactory(Factory):
             l = lambda w: w.sendSetting(watcher.getName(), watcher.getRoom(), watcher.getFile(), None)
             self._roomManager.broadcast(watcher, l)
             self._yapNoteFileChange(watcher.getRoom())
+            self._remindTrackProposalOnFileChange(watcher)
 
     def forcePositionUpdate(self, watcher, doSeek, watcherPauseState):
         room = watcher.getRoom()
@@ -243,6 +247,12 @@ class SyncFactory(Factory):
                 return
             if command == constants.UNLOCK_COMMAND:
                 self._handleLockChatCommand(watcher, locked=False)
+                return
+            if command == constants.TRACK_PROPOSAL_COMMAND:
+                # Reaches the server only from legacy/stock clients (modded clients intercept
+                # locally and publish via Set:trackProposal) - explain what is needed.
+                watcher.sendChatMessage({"message": getMessage("tracks-command-notice-chat-message"),
+                                         "username": watcher.getName()})
                 return
         message = truncateText(message, self.maxChatMessageLength)
         messageDict = {"message": message, "username": watcher.getName()}
@@ -352,6 +362,83 @@ class SyncFactory(Factory):
                 options["size"] = value
             remainder = rest.strip()
         return options, remainder
+
+    def setTrackProposal(self, watcher, payload):
+        # Admin publishes their current audio/sub selection as the room's recommended default.
+        # Capable clients get Set:trackProposal (applied lua-side on layout match); others get chat.
+        if not watcher.isAdmin():
+            watcher.sendChatMessage({"message": getMessage("track-proposal-unauthorised-chat-message"),
+                                     "username": watcher.getName()})
+            return
+        room = watcher.getRoom()
+        if room is None or not isinstance(payload, dict):
+            return
+        proposal = {"by": watcher.getName()}
+        for idKey, nameKey in (("audioId", "audioName"), ("subId", "subName")):
+            value = payload.get(idKey)
+            if value == "no" or (isinstance(value, int) and not isinstance(value, bool)
+                                 and 1 <= value <= constants.TRACK_PROPOSAL_MAX_ID):
+                proposal[idKey] = value
+            name = payload.get(nameKey)
+            if isinstance(name, str) and name:
+                proposal[nameKey] = truncateText(name, constants.TRACK_PROPOSAL_MAX_NAME_LENGTH)
+        signature = payload.get("signature")
+        if isinstance(signature, str) and signature:
+            proposal["signature"] = signature[:constants.TRACK_PROPOSAL_MAX_SIGNATURE_LENGTH]
+        if "audioId" not in proposal and "subId" not in proposal:
+            return  # nothing usable to recommend
+        room.setTrackProposal(proposal)
+        chatText = self._trackProposalChatText(proposal)
+        for receiver in room.getWatchers():
+            self._sendTrackProposalToWatcher(receiver, proposal, chatText)
+        watcher.sendChatMessage({"message": getMessage("track-proposal-published-chat-message"),
+                                 "username": watcher.getName()})
+
+    @staticmethod
+    def _trackProposalChatText(proposal):
+        def describe(idKey, nameKey):
+            if proposal.get(nameKey):
+                return proposal[nameKey]
+            value = proposal.get(idKey)
+            if value == "no":
+                return "off"
+            return "#{}".format(value) if value is not None else "-"
+        return getMessage("track-proposal-chat-message").format(
+            proposal.get("by", ""), describe("audioId", "audioName"), describe("subId", "subName"))
+
+    def _sendTrackProposalToWatcher(self, receiver, proposal, chatText=None):
+        if receiver.supportsFeature("trackProposals"):
+            receiver.sendTrackProposal(proposal)
+            return
+        # Fallback clients with no file yet are reminded when their first file loads instead
+        # (see _remindTrackProposalOnFileChange) - avoids a stale-then-duplicate message.
+        fileName = self._watcherFileName(receiver)
+        if fileName is None:
+            return
+        receiver._lastTrackProposalAnnouncedFile = fileName
+        receiver.sendChatMessage({"message": chatText if chatText else self._trackProposalChatText(proposal),
+                                 "username": proposal.get("by", "")})
+
+    @staticmethod
+    def _watcherFileName(watcher):
+        file_ = watcher.getFile()
+        if isinstance(file_, dict):
+            return file_.get("name")
+        return file_ if file_ else None
+
+    def _remindTrackProposalOnFileChange(self, watcher):
+        # Per-watcher: whenever a fallback client's own file changes, re-post the recommendation
+        # to that watcher (capable clients re-apply locally on file-loaded - no traffic needed).
+        room = watcher.getRoom()
+        proposal = room.getTrackProposal() if room is not None else None
+        if proposal is None or watcher.supportsFeature("trackProposals"):
+            return
+        fileName = self._watcherFileName(watcher)
+        if fileName is None or fileName == watcher._lastTrackProposalAnnouncedFile:
+            return
+        watcher._lastTrackProposalAnnouncedFile = fileName
+        watcher.sendChatMessage({"message": self._trackProposalChatText(proposal),
+                                 "username": proposal.get("by", "")})
 
     def _handleOSDChatCommand(self, watcher, message):
         if not watcher.isController():
@@ -825,6 +912,7 @@ class Room(object):
         self._pauseWarningActive = False  # True while the current pause is over the threshold (drives the blinking OSD)
         self._yapExpired = False  # True once the current pause exceeds YAP_TIMER_MAX_PAUSE; everything stays quiet until the next pause
         self._locked = False  # Locked by a server admin: only admins control playback/playlist. Runtime-only
+        self._trackProposal = None  # Admin-recommended default audio/sub tracks (dict). Runtime-only
 
     def __str__(self, *args, **kwargs):
         return self.getName()
@@ -997,6 +1085,12 @@ class Room(object):
     def setLocked(self, locked):
         self._locked = locked
 
+    def getTrackProposal(self):
+        return self._trackProposal
+
+    def setTrackProposal(self, proposal):
+        self._trackProposal = proposal
+
     def setPlaylist(self, files, setBy=None):
         if self.canControl(setBy):
             self._playlist = files
@@ -1079,6 +1173,7 @@ class Watcher(object):
         self._connector = connector
         self._name = name
         self._isAdmin = False
+        self._lastTrackProposalAnnouncedFile = None
         self._room = None
         self._file = None
         self._position = None
@@ -1154,6 +1249,9 @@ class Watcher(object):
 
     def sendOSDMessage(self, payload):
         self._connector.sendSet({"osdMessage": payload})
+
+    def sendTrackProposal(self, payload):
+        self._connector.sendSet({"trackProposal": payload})
 
     def sendList(self, toGUIOnly=False):
         if toGUIOnly and self.isGUIUser(self._connector.getFeatures()):

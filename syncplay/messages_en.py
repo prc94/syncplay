@@ -148,6 +148,7 @@ en = {
     "arguments-missing-error": "Some necessary arguments are missing, refer to --help",
 
     "unable-to-start-client-error": "Unable to start client",
+    "tracks-not-supported-by-player-error": "Publishing track recommendations requires an mpv-family player.",
 
     "player-path-config-error": "Player path is not set properly. Supported players are: mpv, mpv.net, VLC, MPC-HC, MPC-BE, mplayer2, and IINA.",
     "no-file-path-config-error": "File must be selected before starting your player",
@@ -496,6 +497,7 @@ en = {
     "yap-timer-unpaused-chat-message": "unpaused - yapped for {} ({} total this file)", # This pause duration, total pause time for file
     "yap-timer-osd-paused-message": "Yap timer: {} (total {})", # Live overlay: current pause duration, total pause time for file
     "yap-timer-osd-total-message": "Total yapped this file: {}", # Overlay shown briefly on resume: total pause time for file
+    "track-proposal-osd-message": "Operator {} recommends: audio {}, subtitles {}", # Admin username, audio description, sub description
     "pause-warning-default-message": "Paused for {} - please resume when ready", # Default --pause-warning-message; optional {} = pause duration
     "osd-command-unauthorised-chat-message": "Only room operators and server admins can use /osd.",
     "admin-login-success-chat-message": "You are now a server admin.",
@@ -505,6 +507,10 @@ en = {
     "room-locked-chat-message": "{} locked this room - only server admins can control playback now.", # Admin username
     "room-unlocked-chat-message": "{} unlocked this room - everyone can control playback again.", # Admin username
     "room-already-managed-chat-message": "This room is already managed - /lock only applies to plain rooms.",
+    "track-proposal-chat-message": "{} recommends tracks - audio: {}, subtitles: {}", # Admin username, audio description, sub description
+    "track-proposal-published-chat-message": "Track recommendation published to the room.",
+    "track-proposal-unauthorised-chat-message": "Only server admins can publish track recommendations.",
+    "tracks-command-notice-chat-message": "Track recommendations are published by server admins from a compatible player (Ctrl+T in mpv, or type /tracks there).",
     "osd-command-usage-chat-message": "Usage: /osd [ass=1] [dur=secs] [colour=#RRGGBB] [pos=top|top-left|...|bottom-right] [size=N] message text (ass=1 enables raw ASS tags)",
 
     # Server notifications

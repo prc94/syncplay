@@ -183,6 +183,105 @@ function add_osd_message(payload_json)
     end
 end
 
+local track_proposal = nil  -- Admin-recommended default tracks; applied only on matching layouts
+
+function track_layout_signature()
+    -- Canonical audio/sub layout string: type:id:lang per track. Filenames are deliberately NOT
+    -- part of it - different releases of the same content should match. nil when no file loaded.
+    local tracks = mp.get_property_native("track-list")
+    if tracks == nil or #tracks == 0 then
+        return nil
+    end
+    local parts = {}
+    for i = 1, #tracks do
+        local t = tracks[i]
+        if t.type == "audio" or t.type == "sub" then
+            local lang = t.lang and string.lower(t.lang) or ""
+            table.insert(parts, t.type .. ":" .. tostring(t.id) .. ":" .. lang)
+        end
+    end
+    if #parts == 0 then
+        return nil
+    end
+    return table.concat(parts, "|")
+end
+
+local function set_track_selection(prop, value)
+    if value == "no" then
+        mp.set_property(prop, "no")
+        return true
+    end
+    local num = tonumber(value)
+    if num ~= nil then
+        mp.set_property_native(prop, math.floor(num))
+        return true
+    end
+    return false
+end
+
+function apply_track_proposal(show_note)
+    -- Layout-gated: applies only when the local file's track layout matches the proposal's.
+    -- A different (or no) file keeps the proposal stored for a later matching file-loaded.
+    if track_proposal == nil then
+        return
+    end
+    local signature = track_layout_signature()
+    if signature == nil or track_proposal.signature == nil or signature ~= track_proposal.signature then
+        return
+    end
+    local applied = false
+    if track_proposal.audioId ~= nil then
+        applied = set_track_selection("aid", track_proposal.audioId) or applied
+    end
+    if track_proposal.subId ~= nil then
+        applied = set_track_selection("sid", track_proposal.subId) or applied
+    end
+    if applied and show_note then
+        set_notification_osd("Applied recommended tracks from " .. (track_proposal.by or "operator"), MOOD_NEUTRAL)
+    end
+end
+
+function publish_tracks()
+    -- Read the current selection + layout and hand it to the Syncplay client via the
+    -- print-text back-channel (authorization happens server-side).
+    local mputils = require 'mp.utils'
+    local signature = track_layout_signature()
+    if signature == nil then
+        set_notification_osd("Cannot publish track recommendation: no file loaded", MOOD_BAD)
+        return
+    end
+    local function current(prop, type_)
+        local value = mp.get_property_native(prop)
+        if value == nil or value == false then
+            return "no", "off"
+        end
+        local name = "#" .. tostring(value)
+        local tracks = mp.get_property_native("track-list") or {}
+        for i = 1, #tracks do
+            local t = tracks[i]
+            if t.type == type_ and t.id == value then
+                local desc = t.lang or ""
+                if t.title and t.title ~= "" then
+                    desc = desc .. (desc ~= "" and " " or "") .. "(" .. t.title .. ")"
+                end
+                if desc ~= "" then
+                    name = name .. " " .. desc
+                end
+                break
+            end
+        end
+        return value, name
+    end
+    local audioId, audioName = current("aid", "audio")
+    local subId, subName = current("sid", "sub")
+    local payload = {audioId = audioId, subId = subId, audioName = audioName,
+                     subName = subName, signature = signature}
+    local json = mputils.format_json(payload)
+    if json ~= nil then
+        mp.commandv('print-text', '<SyncplayTrackProposal>' .. json .. '</SyncplayTrackProposal>')
+    end
+end
+
 function osd_messages_ass()
     if #osd_messages == 0 then
         return ""
@@ -487,6 +586,28 @@ end)
 
 mp.register_script_message('osd-message', function(e)
     add_osd_message(e)
+end)
+
+-- Admin track proposals
+
+mp.register_script_message('set-track-proposal', function(e)
+    local mputils = require 'mp.utils'
+    local ok, payload = pcall(mputils.parse_json, e)
+    if not ok or type(payload) ~= "table" then
+        return
+    end
+    track_proposal = payload
+    apply_track_proposal(false)  -- receipt OSD is shown by the client; apply silently if layout matches
+end)
+
+mp.register_script_message('publish-tracks', function()
+    publish_tracks()
+end)
+
+mp.add_key_binding("Ctrl+t", "syncplay_publish_tracks", publish_tracks)
+
+mp.register_event("file-loaded", function()
+    apply_track_proposal(true)  -- catch-up for late file switches + same-layout next episodes
 end)
 
 --

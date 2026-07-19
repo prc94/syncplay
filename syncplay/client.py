@@ -120,6 +120,7 @@ class SyncplayClient(object):
         self._yapTimerOSDSupported = getattr(playerClass, "yapTimerOSDSupported", False)
         self._pauseWarningOSDSupported = getattr(playerClass, "pauseWarningOSDSupported", False)
         self._genericOSDSupported = getattr(playerClass, "genericOSDSupported", False)
+        self._trackProposalsSupported = getattr(playerClass, "trackProposalsSupported", False)
         self._config = config
 
         self._running = False
@@ -662,6 +663,18 @@ class SyncplayClient(object):
         self.checkForFeatureSupport(featureList)
         self._autoAuthAdmin()
 
+    def requestTrackPublish(self):
+        # /tracks command or hotkey: ask the player to read its current track selection and
+        # publish it (comes back via publishTrackProposal). Admin authorization is server-side.
+        if self._player and getattr(self._player, "trackProposalsSupported", False):
+            self._player.requestTrackPublish()
+        else:
+            self.ui.showErrorMessage(getMessage("tracks-not-supported-by-player-error"))
+
+    def publishTrackProposal(self, payload):
+        if self._protocol and self._protocol.logged and isinstance(payload, dict):
+            self._protocol.sendTrackProposal(payload)
+
     def _autoAuthAdmin(self):
         # Auto-authenticate as server admin when a password is configured. Sent as a dedicated
         # Set:adminAuth message (never as chat) so servers without the feature ignore it silently
@@ -762,6 +775,7 @@ class SyncplayClient(object):
         features["yapTimer"] = self._yapTimerOSDSupported  # Can render the live yap-timer overlay
         features["pauseWarning"] = self._pauseWarningOSDSupported  # Can render the blinking pause-warning OSD
         features["osdMessages"] = self._genericOSDSupported  # Can render generic styled/ASS OSD messages
+        features["trackProposals"] = self._trackProposalsSupported  # Can apply admin track proposals
 
         return features
 
@@ -1780,6 +1794,27 @@ class UiManager(object):
             self.showMessage(logText, noPlayer=True)
         if self._client._player:
             self._client._player.showGenericOSD(text, isAss, assAlignment, colour, size, duration)
+
+    def setTrackProposal(self, values):
+        # Admin-recommended default tracks (Set:trackProposal). Log it, notify via the universal
+        # OSD element, and hand the payload to the player's lua for layout-matched application.
+        if not isinstance(values, dict):
+            return
+        def describe(idKey, nameKey):
+            if values.get(nameKey):
+                return str(values[nameKey])
+            value = values.get(idKey)
+            if value == "no":
+                return "off"
+            return "#{}".format(value) if value is not None else "-"
+        text = getMessage("track-proposal-osd-message").format(
+            values.get("by", ""), describe("audioId", "audioName"), describe("subId", "subName"))
+        self.showMessage(text, noPlayer=True)
+        if self._client._player:
+            alignment = constants.OSD_MESSAGE_POSITIONS[constants.OSD_MESSAGE_DEFAULT_POSITION]
+            self._client._player.showGenericOSD(text, False, alignment, constants.OSD_MESSAGE_DEFAULT_COLOUR,
+                                                constants.OSD_MESSAGE_DEFAULT_SIZE, constants.OSD_MESSAGE_DEFAULT_DURATION)
+            self._client._player.setTrackProposal(values)
 
     def showChatMessage(self, username, userMessage):
         messageString = "<{}> {}".format(username, userMessage)
