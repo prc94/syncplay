@@ -80,8 +80,13 @@ SERVER_STATS_SNAPSHOT_INTERVAL = 3600
 YAP_TIMER_UPDATE_INTERVAL = 60  # Secs between server "still paused" yap-timer chat updates (fallback clients)
 YAP_TIMER_MAX_PAUSE = 3600  # Secs - after a single pause lasts this long, the yap timer and pause warning give up (reset + go quiet) until the next pause
 
+# Server-side chat commands (first-token match, intercepted in SyncFactory.sendChat)
+ADMIN_COMMAND = "/admin"  # /admin <password> - authenticate as server admin
+LOCK_COMMAND = "/lock"  # Admin: lock the current plain room (only admins control playback)
+UNLOCK_COMMAND = "/unlock"  # Admin: unlock the current room
+
 # Generic OSD message channel (server -> capable clients; chat fallback for the rest)
-OSD_MESSAGE_COMMAND = "/osd"  # Chat prefix intercepted server-side (managed-room controllers only)
+OSD_MESSAGE_COMMAND = "/osd"  # Chat prefix intercepted server-side (room operators and server admins)
 OSD_MESSAGE_DEFAULT_DURATION = 5.0  # Secs
 OSD_MESSAGE_MAX_DURATION = 60.0  # Secs
 OSD_MESSAGE_DEFAULT_COLOUR = "#FFFF00"

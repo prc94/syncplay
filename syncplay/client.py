@@ -660,6 +660,16 @@ class SyncplayClient(object):
     def setServerVersion(self, version, featureList):
         self.serverVersion = version
         self.checkForFeatureSupport(featureList)
+        self._autoAuthAdmin()
+
+    def _autoAuthAdmin(self):
+        # Auto-authenticate as server admin when a password is configured. Sent as a dedicated
+        # Set:adminAuth message (never as chat) so servers without the feature ignore it silently
+        # and the password can never leak into room chat. Runs per connection (admin status does
+        # not survive reconnects server-side).
+        adminPassword = self._config.get("adminPassword")
+        if adminPassword and self.serverFeatures.get("serverAdmin") and self._protocol:
+            self._protocol.sendAdminAuth(adminPassword)
 
     def sendFeaturesToPlayer(self):
         self._player.setFeatures(self.serverFeatures)

@@ -31,6 +31,7 @@ class ConfigurationGetter(object):
             "room": "",
             "roomList": [],
             "password": None,
+            "adminPassword": None,
             "playerPath": None,
             "perPlayerArguments": None,
             "mediaSearchDirectories": None,
@@ -191,7 +192,7 @@ class ConfigurationGetter(object):
         ]
 
         self._iniStructure = {
-            "server_data": ["host", "port", "password"],
+            "server_data": ["host", "port", "password", "adminPassword"],
             "client_settings": [
                 "name", "room", "roomList", "playerPath",
                 "perPlayerArguments", "slowdownThreshold",
@@ -325,6 +326,8 @@ class ConfigurationGetter(object):
                     key = "clearGUIData"
                 if key == "load_playlist_from_file":
                     key = "loadPlaylistFromFile"
+                if key == "admin_password":
+                    key = "adminPassword"
                 self._config[key] = val
 
     def _splitPortAndHost(self, host):
@@ -509,6 +512,7 @@ class ConfigurationGetter(object):
         self._argparser.add_argument('--no-store', action='store_true', help=getMessage("no-store-argument"))
         self._argparser.add_argument('-r', '--room', metavar='room', type=str, nargs='?', help=getMessage("room-argument"))
         self._argparser.add_argument('-p', '--password', metavar='password', type=str, nargs='?', help=getMessage("password-argument"))
+        self._argparser.add_argument('--admin-password', metavar='adminPassword', type=str, nargs='?', help=getMessage("client-admin-password-argument"))
         self._argparser.add_argument('--player-path', metavar='path', type=str, help=getMessage("player-path-argument"))
         self._argparser.add_argument('-psn', metavar='blackhole', type=str, help=argparse.SUPPRESS)
         self._argparser.add_argument('--language', metavar='language', type=str, help=getMessage("language-argument"))

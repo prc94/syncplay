@@ -174,7 +174,8 @@ Without `ass=1`, braces and backslashes are escaped and display literally.
 ### Notes
 
 * `/osd` requires being an **authenticated controller of a managed room**
-  (rooms named `+name:code`); anyone else gets a private error message.
+  (rooms named `+name:code`) or a [server admin](server-admins.md) (who can
+  use it in any room); anyone else gets a private error message.
 * Sent through chat, so `--disable-chat` disables the command (the server-side
   Python API `SyncFactory.sendOSDMessage(...)` still works for custom mods).
 * Long ASS payloads may hit the chat length limit senders adopt from the

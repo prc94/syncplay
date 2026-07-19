@@ -197,6 +197,7 @@ en = {
     "no-store-argument": "don't store values in .syncplay",
     "room-argument": 'default room',
     "password-argument": 'server password',
+    "client-admin-password-argument": 'server admin password for automatic /admin authentication (modded servers only)',
     "player-path-argument": 'path to your player executable',
     "file-argument": 'file to play',
     "args-argument": 'player options, if you need to pass options starting with - prepend them with single \'--\' argument',
@@ -216,6 +217,7 @@ en = {
     "host-label": "Server address: ",
     "name-label":  "Username (optional):",
     "password-label":  "Server password (if any):",
+    "admin-password-label": "Admin password (if any):",
     "room-label": "Default room: ",
     "roomlist-msgbox-label": "Edit room list (one per line)",
 
@@ -409,6 +411,7 @@ en = {
     "host-tooltip": "Hostname or IP to connect to, optionally including port (e.g. syncplay.pl:8999). Only synchronised with people on same server/port.",
     "name-tooltip": "Nickname you will be known by. No registration, so can easily change later. Random name generated if none specified.",
     "password-tooltip": "Passwords are only needed for connecting to private servers.",
+    "adminpassword-tooltip": "Server-admin password: if set, this client automatically authenticates as a server admin on servers that support it. Leave empty unless you administer the server.",
     "room-tooltip": "Room to join upon connection can be almost anything, but you will only be synchronised with people in the same room.",
 
     "edit-rooms-tooltip": "Edit room list.",
@@ -494,7 +497,14 @@ en = {
     "yap-timer-osd-paused-message": "Yap timer: {} (total {})", # Live overlay: current pause duration, total pause time for file
     "yap-timer-osd-total-message": "Total yapped this file: {}", # Overlay shown briefly on resume: total pause time for file
     "pause-warning-default-message": "Paused for {} - please resume when ready", # Default --pause-warning-message; optional {} = pause duration
-    "osd-command-unauthorised-chat-message": "Only operators of managed rooms can use /osd.",
+    "osd-command-unauthorised-chat-message": "Only room operators and server admins can use /osd.",
+    "admin-login-success-chat-message": "You are now a server admin.",
+    "admin-login-fail-chat-message": "Wrong admin password.",
+    "admin-not-enabled-chat-message": "This server has no admin password configured.",
+    "admin-unauthorised-chat-message": "Only server admins can do that. Authenticate with /admin <password>.",
+    "room-locked-chat-message": "{} locked this room - only server admins can control playback now.", # Admin username
+    "room-unlocked-chat-message": "{} unlocked this room - everyone can control playback again.", # Admin username
+    "room-already-managed-chat-message": "This room is already managed - /lock only applies to plain rooms.",
     "osd-command-usage-chat-message": "Usage: /osd [ass=1] [dur=secs] [colour=#RRGGBB] [pos=top|top-left|...|bottom-right] [size=N] message text (ass=1 enables raw ASS tags)",
 
     # Server notifications
@@ -520,6 +530,7 @@ en = {
     "server-pause-warning-after-argument": "warn a room when a single pause exceeds this many seconds (0/unset = off); blinking OSD on supported players, chat elsewhere",
     "server-pause-warning-interval-argument": "how often (seconds) to repeat the pause warning chat while still paused (default: same as --pause-warning-after)",
     "server-pause-warning-message-argument": "custom pause-warning text; include {} to insert the pause duration",
+    "server-admin-password-argument": "password granting server-admin authority over all rooms (also via SYNCPLAY_ADMIN_PASSWORD env var); users authenticate with /admin <password> in chat",
     "server-chat-maxchars-argument": "Maximum number of characters in a chat message (default is {})", # Default number of characters
     "server-maxusernamelength-argument": "Maximum number of characters in a username (default is {})",
     "server-stats-db-file-argument": "Enable server stats using the SQLite db file provided",

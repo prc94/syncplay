@@ -27,9 +27,10 @@ class SyncFactory(Factory):
     def __init__(self, port='', password='', motdFilePath=None, roomsDbFile=None, permanentRoomsFile=None, isolateRooms=False, salt=None,
                  disableReady=False, disableChat=False, maxChatMessageLength=constants.MAX_CHAT_MESSAGE_LENGTH,
                  maxUsernameLength=constants.MAX_USERNAME_LENGTH, statsDbFile=None, tlsCertPath=None, yapTimer=False,
-                 pauseWarningAfter=0, pauseWarningInterval=0, pauseWarningMessage=None):
+                 pauseWarningAfter=0, pauseWarningInterval=0, pauseWarningMessage=None, adminPassword=None):
         self.isolateRooms = isolateRooms
         self.yapTimer = yapTimer
+        self.adminPassword = adminPassword if adminPassword else None  # Plaintext compare; use TLS
         syncplay.messages.setLanguage(syncplay.messages.getInitialLanguage())
         self.pauseWarningAfter = pauseWarningAfter if pauseWarningAfter else 0  # Secs; 0/None = feature off
         self.pauseWarningInterval = pauseWarningInterval if pauseWarningInterval else self.pauseWarningAfter  # Chat re-remind cadence
@@ -104,6 +105,7 @@ class SyncFactory(Factory):
         features["maxRoomNameLength"] = constants.MAX_ROOM_NAME_LENGTH
         features["maxFilenameLength"] = constants.MAX_FILENAME_LENGTH
         features["setOthersReadiness"] = True
+        features["serverAdmin"] = self.adminPassword is not None
 
         return features
 
@@ -149,6 +151,8 @@ class SyncFactory(Factory):
         if RoomPasswordProvider.isControlledRoom(roomName):
             for controller in room.getControllers():
                 watcher.sendControlledRoomAuthStatus(True, controller, roomName)
+        if watcher.isAdmin():
+            self._broadcastAdminStatus(watcher)  # keep the operator icon in the new room
 
     def sendRoomSwitchMessage(self, watcher):
         l = lambda w: w.sendSetting(watcher.getName(), watcher.getRoom(), None, None)
@@ -222,12 +226,64 @@ class SyncFactory(Factory):
             self._roomManager.broadcastRoom(watcher, lambda w: w.sendControlledRoomAuthStatus(False, watcher.getName(), room._name))
 
     def sendChat(self, watcher, message):
-        if message.startswith(constants.OSD_MESSAGE_COMMAND):
-            # Intercept before chat truncation: ASS markup is verbose and has its own length cap.
-            self._handleOSDChatCommand(watcher, message)
-            return
+        # Server-command interception happens before chat truncation (/osd carries verbose ASS
+        # markup with its own cap; /admin carries a password that must never reach the room).
+        # First-token exact match so unknown /commands still pass through as ordinary chat.
+        if message.startswith("/"):
+            command = message.split(" ", 1)[0].lower()
+            if command == constants.OSD_MESSAGE_COMMAND:
+                self._handleOSDChatCommand(watcher, message)
+                return
+            if command == constants.ADMIN_COMMAND:
+                parts = message.split(" ", 1)
+                self.authAdmin(watcher, parts[1].strip() if len(parts) > 1 else None)
+                return
+            if command == constants.LOCK_COMMAND:
+                self._handleLockChatCommand(watcher, locked=True)
+                return
+            if command == constants.UNLOCK_COMMAND:
+                self._handleLockChatCommand(watcher, locked=False)
+                return
         message = truncateText(message, self.maxChatMessageLength)
         messageDict = {"message": message, "username": watcher.getName()}
+        self._roomManager.broadcastRoom(watcher, lambda w: w.sendChatMessage(messageDict))
+
+    def authAdmin(self, watcher, password):
+        # Shared by the /admin chat command and the Set:adminAuth message (modded-client auto-auth).
+        # Replies are private chat lines so both paths work on any client without new handling.
+        name = watcher.getName()
+        if not self.adminPassword:
+            watcher.sendChatMessage({"message": getMessage("admin-not-enabled-chat-message"), "username": name})
+            return
+        if not password or password != self.adminPassword:
+            watcher.sendChatMessage({"message": getMessage("admin-login-fail-chat-message"), "username": name})
+            return
+        watcher.setAdmin(True)
+        watcher.sendChatMessage({"message": getMessage("admin-login-success-chat-message"), "username": name})
+        self._broadcastAdminStatus(watcher)
+
+    def _broadcastAdminStatus(self, watcher):
+        # Reuses the controller-status mechanism so the admin gets the operator icon (and their
+        # own client unlocks its operator UI) on completely unmodified clients.
+        room = watcher.getRoom()
+        if room is not None:
+            roomName = room.getName()
+            self._roomManager.broadcast(watcher, lambda w: w.sendControlledRoomAuthStatus(True, watcher.getName(), roomName))
+
+    def _handleLockChatCommand(self, watcher, locked):
+        name = watcher.getName()
+        if not watcher.isAdmin():
+            watcher.sendChatMessage({"message": getMessage("admin-unauthorised-chat-message"), "username": name})
+            return
+        room = watcher.getRoom()
+        if room is None:
+            return
+        if RoomPasswordProvider.isControlledRoom(room.getName()):
+            watcher.sendChatMessage({"message": getMessage("room-already-managed-chat-message"), "username": name})
+            return
+        room.setLocked(locked)
+        key = "room-locked-chat-message" if locked else "room-unlocked-chat-message"
+        messageDict = {"message": getMessage(key).format(name), "username": name}
         self._roomManager.broadcastRoom(watcher, lambda w: w.sendChatMessage(messageDict))
 
     def sendOSDMessage(self, room, text, senderName, colour=None, position=None, size=None,
@@ -768,6 +824,7 @@ class Room(object):
         self._pauseWarningTimer = None  # LoopingCall re-reminding (chat fallback) while over the threshold
         self._pauseWarningActive = False  # True while the current pause is over the threshold (drives the blinking OSD)
         self._yapExpired = False  # True once the current pause exceeds YAP_TIMER_MAX_PAUSE; everything stays quiet until the next pause
+        self._locked = False  # Locked by a server admin: only admins control playback/playlist. Runtime-only
 
     def __str__(self, *args, **kwargs):
         return self.getName()
@@ -816,8 +873,12 @@ class Room(object):
 
     def getPosition(self):
         age = time.time() - self._lastUpdate
-        if self._watchers and age > 1:
-            watcher = min(self._watchers.values())
+        referenceWatchers = self._watchers
+        if self._locked:
+            # Locked room: only server admins are a valid position reference
+            referenceWatchers = {name: w for name, w in self._watchers.items() if w.isAdmin()}
+        if referenceWatchers and age > 1:
+            watcher = min(referenceWatchers.values())
             self._setBy = watcher
             self._position = watcher.getPosition()
             self._lastSavedUpdate = self._lastUpdate = time.time()
@@ -828,11 +889,15 @@ class Room(object):
             return 0
 
     def setPaused(self, paused=STATE_PAUSED, setBy=None):
+        if not self.canControl(setBy):
+            return
         self._playState = paused
         self._setBy = setBy
         self.writeToDb()
 
     def setPosition(self, position, setBy=None):
+        if not self.canControl(setBy):
+            return
         self._position = position
         for watcher in self._watchers.values():
             watcher.setPosition(position)
@@ -923,15 +988,24 @@ class Room(object):
         return self._setBy
 
     def canControl(self, watcher):
-        return True
+        # Plain rooms are free-for-all unless a server admin has locked them.
+        return (not self._locked) or (watcher is not None and watcher.isAdmin())
+
+    def isLocked(self):
+        return self._locked
+
+    def setLocked(self, locked):
+        self._locked = locked
 
     def setPlaylist(self, files, setBy=None):
-        self._playlist = files
-        self.writeToDb()
+        if self.canControl(setBy):
+            self._playlist = files
+            self.writeToDb()
 
     def setPlaylistIndex(self, index, setBy=None):
-        self._playlistIndex = index
-        self.writeToDb()
+        if self.canControl(setBy):
+            self._playlistIndex = index
+            self.writeToDb()
 
     def getPlaylist(self):
         return self._playlist
@@ -949,8 +1023,12 @@ class ControlledRoom(Room):
 
     def getPosition(self):
         age = time.time() - self._lastUpdate
-        if self._controllers and age > 1:
-            watcher = min(self._controllers.values())
+        referenceWatchers = dict(self._controllers)
+        for name, watcher in self._watchers.items():
+            if watcher.isAdmin():
+                referenceWatchers[name] = watcher  # admins are implicit controllers
+        if referenceWatchers and age > 1:
+            watcher = min(referenceWatchers.values())
             self._setBy = watcher
             self._position = watcher.getPosition()
             self._lastUpdate = time.time()
@@ -986,7 +1064,9 @@ class ControlledRoom(Room):
             self._playlistIndex = index
 
     def canControl(self, watcher):
-        return watcher.getName() in self._controllers
+        if watcher is None:
+            return False
+        return watcher.isAdmin() or watcher.getName() in self._controllers
 
     def getControllers(self):
         return {}
@@ -998,6 +1078,7 @@ class Watcher(object):
         self._server = server
         self._connector = connector
         self._name = name
+        self._isAdmin = False
         self._room = None
         self._file = None
         self._position = None
@@ -1159,7 +1240,15 @@ class Watcher(object):
         if doSeek or pauseChanged:
             self._server.forcePositionUpdate(self, doSeek, paused)
 
+    def isAdmin(self):
+        return self._isAdmin
+
+    def setAdmin(self, isAdmin):
+        self._isAdmin = isAdmin
+
     def isController(self):
+        if self._isAdmin:
+            return True
         return RoomPasswordProvider.isControlledRoom(self._room.getName()) \
             and self._room.canControl(self)
 
@@ -1185,6 +1274,7 @@ class ConfigurationGetter(object):
         self._argparser.add_argument('--pause-warning-after', metavar='seconds', type=int, nargs='?', help=getMessage("server-pause-warning-after-argument"))
         self._argparser.add_argument('--pause-warning-interval', metavar='seconds', type=int, nargs='?', help=getMessage("server-pause-warning-interval-argument"))
         self._argparser.add_argument('--pause-warning-message', metavar='message', type=str, nargs='?', help=getMessage("server-pause-warning-message-argument"))
+        self._argparser.add_argument('--admin-password', metavar='adminPassword', type=str, nargs='?', help=getMessage("server-admin-password-argument"), default=os.environ.get('SYNCPLAY_ADMIN_PASSWORD'))
         self._argparser.add_argument('--salt', metavar='salt', type=str, nargs='?', help=getMessage("server-salt-argument"), default=os.environ.get('SYNCPLAY_SALT'))
         self._argparser.add_argument('--motd-file', metavar='file', type=str, nargs='?', help=getMessage("server-motd-argument"))
         self._argparser.add_argument('--rooms-db-file', metavar='rooms', type=str, nargs='?', help=getMessage("server-rooms-argument"))

@@ -56,7 +56,8 @@ def main():
         args.yap_timer,
         args.pause_warning_after,
         args.pause_warning_interval,
-        args.pause_warning_message
+        args.pause_warning_message,
+        args.admin_password
     )
 
     if args.ipv6_only is True:

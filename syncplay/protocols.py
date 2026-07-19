@@ -219,6 +219,9 @@ class SyncClientProtocol(JSONCommandProtocol):
     def sendFeaturesUpdate(self, features):
         self.sendSet({"features": features})
 
+    def sendAdminAuth(self, password):
+        self.sendSet({"adminAuth": {"password": password}})
+
     def sendSet(self, setting):
         self.sendMessage({"Set": setting})
 
@@ -619,6 +622,9 @@ class SyncServerProtocol(JSONCommandProtocol):
             elif command == "features":
                 # TODO: Check
                 self._watcher.setFeatures(set_[1])
+            elif command == "adminAuth":
+                password = set_[1].get("password") if isinstance(set_[1], dict) else None
+                self._factory.authAdmin(self._watcher, password)
 
     def sendSet(self, setting):
         self.sendMessage({"Set": setting})
