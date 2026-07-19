@@ -67,11 +67,16 @@ chat. The server confirms privately.
 
 **What others get:**
 
-* **Updated mpv-family clients:** a notification through the OSD message channel
-  ("Operator X recommends: audio #2 eng, subtitles off") and the recommendation is applied as the
-  **default**: immediately if their current file has the **same track layout**, and again on every
+* **Updated mpv-family clients:** the recommendation is applied as the **default** and a
+  status-aware notice appears at the lower middle of the screen — "Applied audio #2 eng,
+  subtitles off - recommended by X" when it took effect, or "X recommends … (applies when a
+  matching file loads)" when their current file doesn't match yet. Application happens
+  immediately if their current file has the **same track layout**, and again on every
   file they load that matches the layout (e.g. the next episode). Users can freely switch tracks
-  afterwards — a manual choice sticks for the current file, exactly like normal mpv track cycling.
+  afterwards — a manual choice sticks for the current file, exactly like normal mpv track cycling —
+  and can return to the recommendation at any time with **Alt+T** (rebindable via the
+  `syncplay_apply_tracks` script binding; shows why nothing happened if no recommendation was
+  received or the layout doesn't match).
 * **Other players / legacy clients:** the recommendation as a chat line, re-posted whenever the
   room's file changes.
 

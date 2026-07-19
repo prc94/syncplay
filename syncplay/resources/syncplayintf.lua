@@ -222,12 +222,16 @@ end
 function apply_track_proposal(show_note)
     -- Layout-gated: applies only when the local file's track layout matches the proposal's.
     -- A different (or no) file keeps the proposal stored for a later matching file-loaded.
+    -- Returns a status string so the manual keybind can explain why nothing happened.
     if track_proposal == nil then
-        return
+        return "none"
     end
     local signature = track_layout_signature()
-    if signature == nil or track_proposal.signature == nil or signature ~= track_proposal.signature then
-        return
+    if signature == nil then
+        return "idle"
+    end
+    if track_proposal.signature == nil or signature ~= track_proposal.signature then
+        return "mismatch"
     end
     local applied = false
     if track_proposal.audioId ~= nil then
@@ -237,7 +241,42 @@ function apply_track_proposal(show_note)
         applied = set_track_selection("sid", track_proposal.subId) or applied
     end
     if applied and show_note then
-        set_notification_osd("Applied recommended tracks from " .. (track_proposal.by or "operator"), MOOD_NEUTRAL)
+        show_track_osd("Applied " .. track_proposal_description() .. " - recommended by " .. (track_proposal.by or "operator"))
+    end
+    return applied and "applied" or "empty"
+end
+
+function track_proposal_description()
+    if track_proposal == nil then
+        return ""
+    end
+    return "audio " .. (track_proposal.audioName or "-") .. ", subtitles " .. (track_proposal.subName or "-")
+end
+
+function show_track_osd(text)
+    -- Track-proposal notices use the generic OSD element at bottom-center so they stay clear of
+    -- the top-left stack (mirrors TRACK_PROPOSAL_OSD_POSITION/DURATION in constants.py)
+    table.insert(osd_messages, {
+        text = ass_escape(text),
+        an = 2,
+        fs = 50,
+        bgr = rrggbb_to_bgr("#FFFF00"),
+        expires = mp.get_time() + 6,
+    })
+    while #osd_messages > MAX_OSD_MESSAGES do
+        table.remove(osd_messages, 1)
+    end
+end
+
+function apply_tracks_keybind()
+    -- Manual (re-)apply of the stored recommendation, e.g. after switching tracks away
+    local status = apply_track_proposal(true)
+    if status == "none" then
+        set_notification_osd("No track recommendation has been received", MOOD_NEUTRAL)
+    elseif status == "idle" then
+        set_notification_osd("Cannot apply recommended tracks: no file loaded", MOOD_BAD)
+    elseif status == "mismatch" then
+        set_notification_osd("Recommended tracks don't match this file's track layout", MOOD_NEUTRAL)
     end
 end
 
@@ -597,7 +636,15 @@ mp.register_script_message('set-track-proposal', function(e)
         return
     end
     track_proposal = payload
-    apply_track_proposal(false)  -- receipt OSD is shown by the client; apply silently if layout matches
+    -- The receipt notice is status-aware: applied tracks are stated as applied (supported clients
+    -- default to them), deferred ones as a pending recommendation - never a misleading "applied".
+    local status = apply_track_proposal(false)
+    local by = payload.by or "operator"
+    if status == "applied" then
+        show_track_osd("Applied " .. track_proposal_description() .. " - recommended by " .. by)
+    else
+        show_track_osd(by .. " recommends " .. track_proposal_description() .. " (applies when a matching file loads)")
+    end
 end)
 
 mp.register_script_message('publish-tracks', function()
@@ -605,6 +652,8 @@ mp.register_script_message('publish-tracks', function()
 end)
 
 mp.add_key_binding("Ctrl+t", "syncplay_publish_tracks", publish_tracks)
+mp.add_key_binding("Alt+t", "syncplay_apply_tracks", apply_tracks_keybind)
+mp.register_script_message('apply-tracks', apply_tracks_keybind)
 
 mp.register_event("file-loaded", function()
     apply_track_proposal(true)  -- catch-up for late file switches + same-layout next episodes

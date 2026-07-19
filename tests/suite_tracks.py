@@ -218,9 +218,7 @@ ui_mock = mock.Mock()
 ui = UiManager(types.SimpleNamespace(_player=fp), ui_mock)
 proposal = {"by": "adm", "audioId": 2, "audioName": "#2 eng", "subId": "no", "subName": "off", "signature": "s"}
 ui.setTrackProposal(proposal)
-check("UiManager: receipt OSD via universal channel", len(fp.osd) == 1
-      and fp.osd[0][0] == "Operator adm recommends: audio #2 eng, subtitles off"
-      and fp.osd[0][1] is False, repr(fp.osd))
+check("UiManager: no client-side OSD (lua shows the status-aware notice)", fp.osd == [], repr(fp.osd))
 check("UiManager: payload forwarded to player", fp.props == [proposal])
 check("UiManager: logged to UI", ui_mock.showMessage.called)
 ui2 = UiManager(types.SimpleNamespace(_player=None), mock.Mock())

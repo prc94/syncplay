@@ -91,6 +91,9 @@ TRACK_PROPOSAL_MAX_NAME_LENGTH = 60
 TRACK_PROPOSAL_MAX_ID = 99
 TRACK_PROPOSAL_MAX_SIGNATURE_LENGTH = 500  # Opaque layout-signature string from the publisher's lua
 MPV_PUBLISH_TRACKS_KEY = "Ctrl+t"  # Default hotkey; rebindable via script binding "syncplay_publish_tracks"
+MPV_APPLY_TRACKS_KEY = "Alt+t"  # Viewer hotkey to (re-)apply the recommendation; script binding "syncplay_apply_tracks"
+TRACK_PROPOSAL_OSD_POSITION = "bottom-center"  # Receipt notice placement (mirrored in syncplayintf.lua show_track_osd)
+TRACK_PROPOSAL_OSD_DURATION = 6.0  # Secs (mirrored in syncplayintf.lua show_track_osd)
 
 # Generic OSD message channel (server -> capable clients; chat fallback for the rest)
 OSD_MESSAGE_COMMAND = "/osd"  # Chat prefix intercepted server-side (room operators and server admins)

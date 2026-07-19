@@ -54,6 +54,19 @@ check("publish: no-file guard", "signature == nil" in tp_pub)
 check("publish: marker emit", "<SyncplayTrackProposal>" in tp_pub and "commandv" in tp_pub)
 check("publish: in-function require", "require 'mp.utils'" in tp_pub)
 check("receipt path applies silently", "apply_track_proposal(false)" in src)
+handler = re.search(r"mp.register_script_message\('set-track-proposal'.*?\nend\)", src, re.S).group(0)
+check("receipt notice: applied vs pending branches", '"Applied "' in handler and "recommends" in handler
+      and "applies when a matching file loads" in handler)
+sto = re.search(r"function show_track_osd\(.*?\nend\n", src, re.S).group(0)
+check("track OSD at bottom-center (an=2) for 6s", "an = 2" in sto and "mp.get_time() + 6" in sto)
+check("track OSD text ass-escaped", "ass_escape(text)" in sto)
+check("file-loaded catch-up uses applied wording", 'show_track_osd("Applied "' in src)
+check("apply keybind registered", 'mp.add_key_binding("Alt+t", "syncplay_apply_tracks", apply_tracks_keybind)' in src)
+check("apply-tracks script-message registered", "mp.register_script_message('apply-tracks'" in src)
+kb = re.search(r"function apply_tracks_keybind\(.*?\nend\n", src, re.S).group(0)
+check("keybind explains none/idle/mismatch", all(s in kb for s in ('"none"', '"idle"', '"mismatch"')))
+check("apply returns status strings", all('return "%s"' % s in tp_apply for s in ("none", "idle", "mismatch", "applied")) or
+      ('return "none"' in tp_apply and 'return "idle"' in tp_apply and 'return "mismatch"' in tp_apply and '"applied" or "empty"' in tp_apply))
 check("local track_proposal declared before use",
       src.find("local track_proposal = nil") < src.find("if track_proposal == nil"))
 
@@ -94,10 +107,11 @@ check("setter defined before registration", deff < reg, "{} < {}".format(deff, r
 # 3. block balance inside the two new functions (function+if openers == end closers)
 for fname in ("process_pausewarning_osd", "process_yaptimer_osd", "set_pausewarning_osd", "set_yaptimer_osd",
               "add_osd_message", "osd_messages_ass", "rrggbb_to_bgr",
-              "track_layout_signature", "apply_track_proposal", "publish_tracks", "set_track_selection"):
+              "track_layout_signature", "apply_track_proposal", "publish_tracks", "set_track_selection",
+              "apply_tracks_keybind", "show_track_osd", "track_proposal_description"):
     m = re.search(r"function {}\([^)]*\).*?\nend\n".format(fname), src, re.S)
     body = m.group(0)
-    openers = len(re.findall(r"\bfunction\b", body)) + len(re.findall(r"\bthen\b", body)) + len(re.findall(r"\bdo\b", body))
+    openers = len(re.findall(r"\bfunction\b", body)) + len(re.findall(r"\bthen\b", body)) - len(re.findall(r"\belseif\b", body)) + len(re.findall(r"\bdo\b", body))
     closers = len(re.findall(r"\bend\b", body))
     check("block balance in {}".format(fname), openers == closers, "{} openers vs {} ends".format(openers, closers))
 
