@@ -213,6 +213,8 @@ class SyncClientProtocol(JSONCommandProtocol):
                 self._client.playlist.changePlaylist(values['files'], values['user'])
             elif command == "features":
                 self._client.setUserFeatures(values["username"], values['features'])
+            elif command == "osdMessage":
+                self._client.ui.showGenericOSD(values)
 
     def sendFeaturesUpdate(self, features):
         self.sendSet({"features": features})

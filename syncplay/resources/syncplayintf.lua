@@ -144,6 +144,64 @@ function set_pausewarning_osd(osd_message)
     last_pausewarning_osd_time = mp.get_time()
 end
 
+local osd_messages = {}  -- Generic server-driven OSD messages: {text, an, fs, bgr, expires}
+local MAX_OSD_MESSAGES = 5  -- Oldest dropped first
+
+function rrggbb_to_bgr(colour)
+    -- "#RRGGBB" -> "BBGGRR" (ASS colour byte order); falls back to yellow
+    if type(colour) == "string" and colour:match("^#%x%x%x%x%x%x$") then
+        return colour:sub(6, 7) .. colour:sub(4, 5) .. colour:sub(2, 3)
+    end
+    return "00FFFF"
+end
+
+function add_osd_message(payload_json)
+    local mputils = require 'mp.utils'  -- required here: the file-scope 'utils' local is declared later
+    local ok, payload = pcall(mputils.parse_json, payload_json)
+    if not ok or type(payload) ~= "table" or type(payload.text) ~= "string" or payload.text == "" then
+        return
+    end
+    local an = tonumber(payload.an)
+    if an == nil or an < 1 or an > 9 then an = 8 end
+    local fs = tonumber(payload.size)
+    if fs == nil or fs < 10 or fs > 150 then fs = 50 end
+    local duration = tonumber(payload.duration)
+    if duration == nil or duration < 0.5 or duration > 60 then duration = 5 end
+    local text = payload.text
+    if payload.ass ~= true then
+        text = ass_escape(text)  -- plain mode: literal braces/backslashes are safe
+    end
+    table.insert(osd_messages, {
+        text = text,
+        an = math.floor(an),
+        fs = math.floor(fs),
+        bgr = rrggbb_to_bgr(payload.colour),
+        expires = mp.get_time() + duration,
+    })
+    while #osd_messages > MAX_OSD_MESSAGES do
+        table.remove(osd_messages, 1)
+    end
+end
+
+function osd_messages_ass()
+    if #osd_messages == 0 then
+        return ""
+    end
+    local now = mp.get_time()
+    for i = #osd_messages, 1, -1 do
+        if osd_messages[i].expires <= now then
+            table.remove(osd_messages, i)
+        end
+    end
+    local out = ""
+    for i = 1, #osd_messages do
+        local m = osd_messages[i]
+        -- Own event line => independent \an placement; inline ASS tags may restyle from here
+        out = out .. "\n{\\an" .. m.an .. "\\fs" .. m.fs .. "\\1c&H" .. m.bgr .. "&}" .. m.text
+    end
+    return out
+end
+
 function add_chat(chat_message, mood)
     last_chat_time = mp.get_time()
     local entry = #chat_log+1
@@ -220,6 +278,7 @@ function chat_update()
         ass:append(input_ass())
         ass:append(chat_ass)
     end
+    ass:append(osd_messages_ass())  -- generic server-driven messages; self-positioned via \an
 
     -- The commit that introduced the new API removed the internal heuristics on whether a refresh is required,
     -- so we check for changed text manually to not cause excessive GPU load
@@ -422,6 +481,12 @@ end)
 
 mp.register_script_message('pausewarning-osd', function(e)
     set_pausewarning_osd(e)
+end)
+
+-- Generic OSD messages (JSON payload; optional raw ASS markup)
+
+mp.register_script_message('osd-message', function(e)
+    add_osd_message(e)
 end)
 
 --

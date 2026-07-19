@@ -494,6 +494,8 @@ en = {
     "yap-timer-osd-paused-message": "Yap timer: {} (total {})", # Live overlay: current pause duration, total pause time for file
     "yap-timer-osd-total-message": "Total yapped this file: {}", # Overlay shown briefly on resume: total pause time for file
     "pause-warning-default-message": "Paused for {} - please resume when ready", # Default --pause-warning-message; optional {} = pause duration
+    "osd-command-unauthorised-chat-message": "Only operators of managed rooms can use /osd.",
+    "osd-command-usage-chat-message": "Usage: /osd [ass=1] [dur=secs] [colour=#RRGGBB] [pos=top|top-left|...|bottom-right] [size=N] message text (ass=1 enables raw ASS tags)",
 
     # Server notifications
     "welcome-server-notification": "Welcome to Syncplay server, ver. {0}",  # version

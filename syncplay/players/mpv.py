@@ -1,4 +1,5 @@
 # coding:utf8
+import json
 import os
 import random
 import re
@@ -29,6 +30,7 @@ class MpvPlayer(BasePlayer):
     chatOSDSupported = True
     yapTimerOSDSupported = True
     pauseWarningOSDSupported = True
+    genericOSDSupported = True
     speedSupported = True
     customOpenDialog = False
 
@@ -167,6 +169,23 @@ class MpvPlayer(BasePlayer):
             return
         messageString = self._sanitizeText(text.replace("\\", constants.MPV_INPUT_BACKSLASH_SUBSTITUTE_CHARACTER))
         self._listener.sendLine(["script-message-to", "syncplayintf", "pausewarning-osd", messageString])
+
+    def showGenericOSD(self, text, isAss, assAlignment, colour, size, duration):
+        # Generic server-driven OSD message rendered by syncplayintf.lua. The payload travels as a
+        # single JSON argument; _sanitizeText is deliberately NOT applied - it escapes braces, which
+        # would destroy ASS override tags, and the JSON IPC transport is already binary-safe. In
+        # plain mode the lua side ass_escape()s the text instead.
+        if getattr(self, "_listener", None) is None:
+            return
+        payload = json.dumps({
+            "text": text,
+            "ass": bool(isAss),
+            "an": assAlignment,
+            "colour": colour,
+            "size": size,
+            "duration": duration,
+        })
+        self._listener.sendLine(["script-message-to", "syncplayintf", "osd-message", payload])
 
     def setSpeed(self, value):
         self._setProperty('speed', "{:.2f}".format(value))

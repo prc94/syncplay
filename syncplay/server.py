@@ -2,6 +2,7 @@ import argparse
 import codecs
 import hashlib
 import os
+import re
 import time
 from string import Template
 
@@ -221,9 +222,92 @@ class SyncFactory(Factory):
             self._roomManager.broadcastRoom(watcher, lambda w: w.sendControlledRoomAuthStatus(False, watcher.getName(), room._name))
 
     def sendChat(self, watcher, message):
+        if message.startswith(constants.OSD_MESSAGE_COMMAND):
+            # Intercept before chat truncation: ASS markup is verbose and has its own length cap.
+            self._handleOSDChatCommand(watcher, message)
+            return
         message = truncateText(message, self.maxChatMessageLength)
         messageDict = {"message": message, "username": watcher.getName()}
         self._roomManager.broadcastRoom(watcher, lambda w: w.sendChatMessage(messageDict))
+
+    def sendOSDMessage(self, room, text, senderName, colour=None, position=None, size=None,
+                       duration=None, assFormatting=False):
+        # Generic OSD message channel: capable clients get a styled (optionally full-ASS) overlay
+        # via Set:osdMessage; everyone else gets the tag-stripped text as a chat line.
+        if room is None or not text:
+            return
+        text = truncateText(text.replace("\r", "").replace("\n", ""), constants.OSD_MESSAGE_MAX_LENGTH)
+        if colour is None or not re.match(r"^#[0-9A-Fa-f]{6}$", colour):
+            colour = constants.OSD_MESSAGE_DEFAULT_COLOUR
+        if position not in constants.OSD_MESSAGE_POSITIONS:
+            position = constants.OSD_MESSAGE_DEFAULT_POSITION
+        try:
+            size = int(size)
+        except (TypeError, ValueError):
+            size = constants.OSD_MESSAGE_DEFAULT_SIZE
+        size = max(constants.OSD_MESSAGE_MIN_SIZE, min(constants.OSD_MESSAGE_MAX_SIZE, size))
+        try:
+            duration = float(duration)
+        except (TypeError, ValueError):
+            duration = constants.OSD_MESSAGE_DEFAULT_DURATION
+        duration = max(0.5, min(constants.OSD_MESSAGE_MAX_DURATION, duration))
+        payload = {
+            "text": text,
+            "ass": bool(assFormatting),
+            "colour": colour,
+            "position": position,
+            "size": size,
+            "duration": duration,
+        }
+        fallbackDict = {"message": self.stripOSDTags(text), "username": senderName}
+        for receiver in room.getWatchers():
+            if receiver.supportsFeature("osdMessages"):
+                receiver.sendOSDMessage(payload)
+            else:
+                receiver.sendChatMessage(fallbackDict)
+
+    @staticmethod
+    def stripOSDTags(text):
+        # Plain-text rendition of an (optionally ASS-styled) message for chat/log fallback.
+        text = re.sub(constants.OSD_MESSAGE_STRIP_ASS_REGEX, "", text)
+        return text.replace("\\N", " ").replace("\\n", " ").replace("\\h", " ").strip()
+
+    @staticmethod
+    def _parseOSDCommand(message):
+        # "/osd [ass=1] [dur=N] [colour=#RRGGBB] [pos=POS] [size=N] text..." -> (options, text).
+        # Leading key=value tokens are options; the first non-option token starts the message text.
+        remainder = message[len(constants.OSD_MESSAGE_COMMAND):].strip()
+        options = {}
+        while remainder:
+            token, _, rest = remainder.partition(" ")
+            key, sep, value = token.partition("=")
+            key = key.lower()
+            if not sep or key not in ("ass", "dur", "duration", "colour", "color", "pos", "size"):
+                break
+            if key == "ass":
+                options["assFormatting"] = value.lower() in ("1", "true", "yes", "on")
+            elif key in ("dur", "duration"):
+                options["duration"] = value
+            elif key in ("colour", "color"):
+                options["colour"] = value
+            elif key == "pos":
+                options["position"] = value.lower()
+            elif key == "size":
+                options["size"] = value
+            remainder = rest.strip()
+        return options, remainder
+
+    def _handleOSDChatCommand(self, watcher, message):
+        if not watcher.isController():
+            watcher.sendChatMessage({"message": getMessage("osd-command-unauthorised-chat-message"),
+                                     "username": watcher.getName()})
+            return
+        options, text = self._parseOSDCommand(message)
+        if not text:
+            watcher.sendChatMessage({"message": getMessage("osd-command-usage-chat-message"),
+                                     "username": watcher.getName()})
+            return
+        self.sendOSDMessage(watcher.getRoom(), text, watcher.getName(), **options)
 
     def updateYapTimer(self, room, paused, watcher):
         # Called on a genuine room pause/unpause. Accumulates pause time and, for clients that
@@ -986,6 +1070,9 @@ class Watcher(object):
             if skipIfSupportsFeature and self.supportsFeature(skipIfSupportsFeature):
                 return
             self._connector.sendMessage({"Chat": message})
+
+    def sendOSDMessage(self, payload):
+        self._connector.sendSet({"osdMessage": payload})
 
     def sendList(self, toGUIOnly=False):
         if toGUIOnly and self.isGUIUser(self._connector.getFeatures()):

@@ -119,6 +119,7 @@ class SyncplayClient(object):
         # class (known now, before the player process starts) so it can be advertised in the Hello.
         self._yapTimerOSDSupported = getattr(playerClass, "yapTimerOSDSupported", False)
         self._pauseWarningOSDSupported = getattr(playerClass, "pauseWarningOSDSupported", False)
+        self._genericOSDSupported = getattr(playerClass, "genericOSDSupported", False)
         self._config = config
 
         self._running = False
@@ -750,6 +751,7 @@ class SyncplayClient(object):
         features["setOthersReadiness"] = True
         features["yapTimer"] = self._yapTimerOSDSupported  # Can render the live yap-timer overlay
         features["pauseWarning"] = self._pauseWarningOSDSupported  # Can render the blinking pause-warning OSD
+        features["osdMessages"] = self._genericOSDSupported  # Can render generic styled/ASS OSD messages
 
         return features
 
@@ -1736,6 +1738,38 @@ class UiManager(object):
         # auto-hides shortly after the server stops sending it (on resume). No client-side clear needed.
         if self._client._player:
             self._client._player.updatePauseWarningOSD(message)
+
+    def showGenericOSD(self, values):
+        # Server-driven generic OSD message (Set:osdMessage). Values come off the wire, so defaults
+        # and clamps are re-applied here regardless of what the server claims.
+        text = values.get("text") if isinstance(values, dict) else None
+        if not text or not isinstance(text, str):
+            return
+        text = text.replace("\r", "").replace("\n", "")[:constants.OSD_MESSAGE_MAX_LENGTH]
+        isAss = bool(values.get("ass", False))
+        colour = values.get("colour")
+        if not isinstance(colour, str) or not re.match(r"^#[0-9A-Fa-f]{6}$", colour):
+            colour = constants.OSD_MESSAGE_DEFAULT_COLOUR
+        position = values.get("position")
+        assAlignment = constants.OSD_MESSAGE_POSITIONS.get(
+            position, constants.OSD_MESSAGE_POSITIONS[constants.OSD_MESSAGE_DEFAULT_POSITION])
+        try:
+            size = int(values.get("size"))
+        except (TypeError, ValueError):
+            size = constants.OSD_MESSAGE_DEFAULT_SIZE
+        size = max(constants.OSD_MESSAGE_MIN_SIZE, min(constants.OSD_MESSAGE_MAX_SIZE, size))
+        try:
+            duration = float(values.get("duration"))
+        except (TypeError, ValueError):
+            duration = constants.OSD_MESSAGE_DEFAULT_DURATION
+        duration = max(0.5, min(constants.OSD_MESSAGE_MAX_DURATION, duration))
+        # Log the plain-text rendition (what fallback clients see as chat) to the GUI/console.
+        logText = re.sub(constants.OSD_MESSAGE_STRIP_ASS_REGEX, "", text)
+        logText = logText.replace("\\N", " ").replace("\\n", " ").replace("\\h", " ").strip()
+        if logText:
+            self.showMessage(logText, noPlayer=True)
+        if self._client._player:
+            self._client._player.showGenericOSD(text, isAss, assAlignment, colour, size, duration)
 
     def showChatMessage(self, username, userMessage):
         messageString = "<{}> {}".format(username, userMessage)

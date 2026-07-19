@@ -7,6 +7,8 @@ class BasePlayer(object):
     yapTimerOSDSupported = False
     # Players that can render the blinking pause-warning overlay set this True and override updatePauseWarningOSD.
     pauseWarningOSDSupported = False
+    # Players that can render generic styled/ASS OSD messages set this True and override showGenericOSD.
+    genericOSDSupported = False
 
     '''
     This method is supposed to
@@ -28,6 +30,14 @@ class BasePlayer(object):
     No-op for players that do not support it.
     '''
     def updatePauseWarningOSD(self, text):
+        pass
+
+    '''
+    Display a generic server-driven OSD message. isAss=True means text contains raw ASS override
+    tags to be rendered as-is; assAlignment is an ASS \\an value (1-9); colour is "#RRGGBB";
+    size is an ASS \\fs value; duration is in seconds. No-op for players that do not support it.
+    '''
+    def showGenericOSD(self, text, isAss, assAlignment, colour, size, duration):
         pass
 
     '''

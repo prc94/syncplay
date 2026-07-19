@@ -1,4 +1,4 @@
-# Yap Timer & Pause Warning
+# Yap Timer, Pause Warning & OSD Messages
 
 Two optional, server-side features for measuring and managing time spent paused
 ("yapping") in a room. Both are **off by default**, are enabled by the server
@@ -123,6 +123,66 @@ Everything stays quiet until the **next pause begins**, which starts fresh
 
 Note: because of this cap, a `--pause-warning-after` threshold of 3600 seconds
 or more will never fire.
+
+---
+
+## OSD messages (`/osd`)
+
+A generic channel for putting **styled announcements** on everyone's screen.
+Operators (controllers) of **managed rooms** type a `/osd` command into the
+Syncplay chat; the server intercepts it and broadcasts an OSD message to the
+room instead of a chat line. Always available — no server flag needed.
+
+```
+/osd [ass=1] [dur=secs] [colour=#RRGGBB] [pos=POSITION] [size=N] message text
+```
+
+| Option | Meaning | Default / limits |
+|---|---|---|
+| `dur=N` | Display time in seconds | 5 (0.5–60) |
+| `colour=#RRGGBB` | Text colour | `#FFFF00` |
+| `pos=...` | One of `top-left`, `top-center`/`top`, `top-right`, `middle-left`, `center`, `middle-right`, `bottom-left`, `bottom-center`/`bottom`, `bottom-right` | `top-center` |
+| `size=N` | Font size (ASS units on a 1920×1080 canvas) | 50 (10–150) |
+| `ass=1` | Treat the message as **raw ASS markup** (see below) | off |
+
+Examples:
+
+```
+/osd Movie starts in 2 minutes!
+/osd dur=10 colour=#FF4444 pos=bottom size=70 Last call for snacks
+/osd ass=1 dur=15 pos=top {\b1\1c&H0000FF&}INTERMISSION{\b0}\N{\fs30}back in {\i1}10 minutes{\i0}
+```
+
+### Full ASS enrichment (`ass=1`)
+
+With `ass=1` the message text is passed to the player's renderer **verbatim**,
+so every libass override tag works: bold/italic (`\b1`, `\i1`), inline colours
+(`\1c&HBBGGRR&` — note BGR order), borders and shadows (`\bord`, `\shad`),
+fonts (`\fn`), per-part sizes (`\fs`), rotation (`\frz`), animation (`\t`),
+line breaks (`\N`), even vector drawings (`\p1`). The `colour`/`pos`/`size`
+options still apply as the starting style; inline tags override from there.
+Without `ass=1`, braces and backslashes are escaped and display literally.
+
+### Who sees what
+
+* **Updated mpv / mpv.net / IINA / Memento clients:** the styled message at the
+  chosen position, up to 5 concurrent messages, each with its own timer. The
+  plain-text version also appears in their chat log.
+* **Everyone else (≥ 1.5.0):** the message as a chat line with ASS tags
+  stripped (`INTERMISSION back in 10 minutes`).
+
+### Notes
+
+* `/osd` requires being an **authenticated controller of a managed room**
+  (rooms named `+name:code`); anyone else gets a private error message.
+* Sent through chat, so `--disable-chat` disables the command (the server-side
+  Python API `SyncFactory.sendOSDMessage(...)` still works for custom mods).
+* Long ASS payloads may hit the chat length limit senders adopt from the
+  server — raise `--max-chat-message-length` if needed. The OSD text itself is
+  capped at 1000 characters.
+* **Trust note:** `ass=1` lets a room operator draw arbitrary overlays (up to
+  60 s per message) on viewers' players. Only share operator passwords with
+  people you trust.
 
 ---
 

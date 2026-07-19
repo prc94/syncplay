@@ -79,6 +79,24 @@ SERVER_STATE_INTERVAL = 1
 SERVER_STATS_SNAPSHOT_INTERVAL = 3600
 YAP_TIMER_UPDATE_INTERVAL = 60  # Secs between server "still paused" yap-timer chat updates (fallback clients)
 YAP_TIMER_MAX_PAUSE = 3600  # Secs - after a single pause lasts this long, the yap timer and pause warning give up (reset + go quiet) until the next pause
+
+# Generic OSD message channel (server -> capable clients; chat fallback for the rest)
+OSD_MESSAGE_COMMAND = "/osd"  # Chat prefix intercepted server-side (managed-room controllers only)
+OSD_MESSAGE_DEFAULT_DURATION = 5.0  # Secs
+OSD_MESSAGE_MAX_DURATION = 60.0  # Secs
+OSD_MESSAGE_DEFAULT_COLOUR = "#FFFF00"
+OSD_MESSAGE_DEFAULT_POSITION = "top-center"
+OSD_MESSAGE_DEFAULT_SIZE = 50  # ASS \fs units on the 1920x1080 OSD canvas
+OSD_MESSAGE_MIN_SIZE = 10
+OSD_MESSAGE_MAX_SIZE = 150
+OSD_MESSAGE_MAX_LENGTH = 1000  # Characters (ASS markup is verbose)
+OSD_MESSAGE_MAX_CONCURRENT = 5  # Older messages are dropped first
+OSD_MESSAGE_STRIP_ASS_REGEX = r"\{[^}]*\}"  # Removes ASS override blocks for chat/log fallback text
+OSD_MESSAGE_POSITIONS = {  # Keyword -> ASS \an alignment
+    "top-left": 7, "top-center": 8, "top": 8, "top-right": 9,
+    "middle-left": 4, "center": 5, "middle": 5, "middle-right": 6,
+    "bottom-left": 1, "bottom-center": 2, "bottom": 2, "bottom-right": 3,
+}
 WARNING_OSD_MESSAGES_LOOP_INTERVAL = 1
 AUTOPLAY_DELAY = 3.0
 DO_NOT_RESET_POSITION_THRESHOLD = 1.0
