@@ -288,6 +288,25 @@ ul.addUser("me", "d", None, noMessage=True, isAfk=True)  # currentUser early-ret
 check("userlist addUser sets currentUser AFK (List refresh path)", ul.currentUser.isAfk() is True)
 check("userlist getUserRoom", ul.getUserRoom("alice") == "d" and ul.getUserRoom("nobody") is None)
 
+# ---------- persistent OSD: AFK listed on its own line, separate from plain not-ready ----------
+ol = SyncplayUserlist.__new__(SyncplayUserlist)
+ol.currentUser = SyncplayUser("me", "d")
+ol.currentUser.setReady(True)
+afkUser = SyncplayUser("alice", "d", file_={"name": "x"})
+afkUser.setReady(False); afkUser.setAfk(True)
+notReadyUser = SyncplayUser("bob", "d", file_={"name": "x"})
+notReadyUser.setReady(False)
+ol._users = {"alice": afkUser, "bob": notReadyUser}
+check("usersInRoomAfk lists only AFK users", ol.usersInRoomAfk() == "alice", repr(ol.usersInRoomAfk()))
+check("usersInRoomNotReady(excludeAfk) drops AFK users",
+      ol.usersInRoomNotReady(excludeAfk=True) == "bob", repr(ol.usersInRoomNotReady(excludeAfk=True)))
+nr_all = ol.usersInRoomNotReady()
+check("usersInRoomNotReady default still counts AFK as not-ready",
+      "alice" in nr_all and "bob" in nr_all, repr(nr_all))
+# an AFK current user shows up on the AFK line
+ol.currentUser.setAfk(True)
+check("usersInRoomAfk includes AFK currentUser", "me" in ol.usersInRoomAfk(), repr(ol.usersInRoomAfk()))
+
 # ---------- feature advertisement ----------
 pf = make_factory()
 pf.isolateRooms = False; pf.roomsDbFile = None; pf.disableChat = False
@@ -299,7 +318,8 @@ check("server featureList advertises afk=True", feats.get("afk") is True, repr(f
 keys = ["set-as-afk-notification", "set-as-not-afk-notification", "other-afk-notification",
         "other-not-afk-notification", "afk-userlist-userflag", "afk-on-chat-message",
         "afk-off-chat-message", "feature-afk", "afk-menu-label", "not-afk-menu-label",
-        "afk-tooltip", "afk-guipushbuttonlabel", "commandlist-notification/afk"]
+        "afk-tooltip", "afk-guipushbuttonlabel", "commandlist-notification/afk",
+        "afk-osd-notification"]
 for k in keys:
     check("en key: " + k, k in M.messages["en"])
 bad = [l for l in M.getMissingStrings().splitlines() if "Unused" in l and "afk" in l.lower()]

@@ -141,7 +141,10 @@ A third per-user state alongside *ready* and *not ready*. Marking yourself
 
 An AFK user is also shown as **not ready** (so autoplay and "everyone ready"
 correctly wait for them), marked with a clock icon in the user list, and
-announced to the room ("*name* is now AFK").
+announced to the room ("*name* is now AFK"). In the same persistent OSD warning
+that lists who is *not ready*, AFK users are pulled onto their own **`AFK:`
+line** rather than lumped in with the plain not-ready names — so anyone can see
+at a glance who has stepped away as long as the readiness warning is on screen.
 
 ### Toggling AFK
 

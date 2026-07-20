@@ -1370,7 +1370,7 @@ class SyncplayClient(object):
                         allReadyMessage = getMessage("all-users-ready").format(self._userlist.readyUserCount())
                         osdMessage = "{}{}{}".format(fileDifferencesMessage, self._client._player.osdMessageSeparator, allReadyMessage)
                     else:
-                        notAllReadyMessage = getMessage("not-all-ready").format(self._userlist.usersInRoomNotReady())
+                        notAllReadyMessage = self._notReadyOSDMessage()
                         osdMessage = "{}{}{}".format(fileDifferencesMessage, self._client._player.osdMessageSeparator, notAllReadyMessage)
                 else:
                     osdMessage = fileDifferencesMessage
@@ -1379,9 +1379,21 @@ class SyncplayClient(object):
                     osdMessage = getMessage("all-users-ready").format(self._userlist.readyUserCount())
                 else:
                     messageMood = constants.MESSAGE_BADNEWS
-                    osdMessage = getMessage("not-all-ready").format(self._userlist.usersInRoomNotReady())
+                    osdMessage = self._notReadyOSDMessage()
             if osdMessage:
                 self._ui.showOSDMessage(osdMessage, constants.WARNING_OSD_MESSAGES_LOOP_INTERVAL, OSDType=constants.OSD_ALERT, mood=messageMood)
+
+        def _notReadyOSDMessage(self):
+            # AFK users are forced not-ready, but call them out on their own line
+            # rather than lumping them in with users who are simply not ready.
+            parts = []
+            notReady = self._userlist.usersInRoomNotReady(excludeAfk=True)
+            if notReady:
+                parts.append(getMessage("not-all-ready").format(notReady))
+            afkUsers = self._userlist.usersInRoomAfk()
+            if afkUsers:
+                parts.append(getMessage("afk-osd-notification").format(afkUsers))
+            return self._client._player.osdMessageSeparator.join(parts)
 
         def __displayMessageOnOSD(self, warningName, warningFunction):
             if constants.OSD_WARNING_MESSAGE_DURATION > self._warnings[warningName]["displayedFor"]:
@@ -1677,14 +1689,23 @@ class SyncplayUserlist(object):
                 userCount += 1
         return userCount
 
-    def usersInRoomNotReady(self):
+    def usersInRoomNotReady(self, excludeAfk=False):
         notReady = []
-        if not self.currentUser.isReady():
+        if not self.currentUser.isReady() and not (excludeAfk and self.currentUser.isAfk()):
             notReady.append(self.currentUser.username)
         for user in self._users.values():
-            if user.room == self.currentUser.room and user.isReadyWithFile() == False:
+            if user.room == self.currentUser.room and user.isReadyWithFile() == False and not (excludeAfk and user.isAfk()):
                 notReady.append(user.username)
         return ", ".join(notReady)
+
+    def usersInRoomAfk(self):
+        afk = []
+        if self.currentUser.isAfk():
+            afk.append(self.currentUser.username)
+        for user in self._users.values():
+            if user.room == self.currentUser.room and user.isAfk():
+                afk.append(user.username)
+        return ", ".join(afk)
 
     def areAllFilesInRoomSame(self):
         if self.currentUser.file:

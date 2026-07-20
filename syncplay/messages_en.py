@@ -55,6 +55,7 @@ en = {
     "playing-notification/room-addendum": " in room: '{}'",  # Room
 
     "not-all-ready": "Not ready: {}",  # Usernames
+    "afk-osd-notification": "AFK: {}",  # Usernames
     "all-users-ready": "Everyone is ready ({} users)",  # Number of ready users
     "ready-to-unpause-notification": "You are now set as ready - unpause again to unpause",
     "set-as-ready-notification": "You are now set as ready",
