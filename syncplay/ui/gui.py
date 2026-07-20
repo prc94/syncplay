@@ -512,7 +512,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._syncplayClient.fileSwitch.setMediaDirectories(self.config["mediaSearchDirectories"])
             if not self.config["mediaSearchDirectories"]:
                 self._syncplayClient.ui.showErrorMessage(getMessage("no-media-directories-error"))
-            self.updateReadyState(self.config['readyAtStart'])
+            self.updateReadyAfkRadio(self.config['readyAtStart'], False)
             autoplayInitialState = self.config['autoplayInitialState']
             if autoplayInitialState is not None:
                 self.autoplayPushButton.blockSignals(True)
@@ -535,9 +535,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def setFeatures(self, featureList):
         if not featureList["readiness"]:
-            self.readyPushButton.setEnabled(False)
-        # .get, not [] - stock servers' featureList has no "afk" key
-        self.afkPushButton.setEnabled(bool(featureList.get("afk")))
+            for radio in (self.readyRadio, self.notReadyRadio, self.afkRadio):
+                radio.setEnabled(False)
+        else:
+            # .get, not [] - stock servers' featureList has no "afk" key
+            self.afkRadio.setEnabled(bool(featureList.get("afk")))
         if not featureList["chat"]:
             self.chatFrame.setEnabled(False)
             self.chatInput.setReadOnly(True)
@@ -711,8 +713,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 font = QtGui.QFont()
                 if currentUser.username == user.username:
                     font.setWeight(QtGui.QFont.Bold)
-                    self.updateReadyState(currentUser.isReadyWithFile())
-                    self.updateAfkState(currentUser.isAfk())
+                    self.updateReadyAfkRadio(currentUser.isReady(), currentUser.isAfk())
                 if isControlledRoom and not isController:
                     useritem.setForeground(QtGui.QBrush(QtGui.QColor(constants.STYLE_NOTCONTROLLER_COLOR)))
                 useritem.setFont(font)
@@ -883,21 +884,15 @@ class MainWindow(QtWidgets.QMainWindow):
         except:
             pass
 
-    def updateReadyState(self, newState):
-        oldState = self.readyPushButton.isChecked()
-        if newState != oldState and newState is not None:
-            self.readyPushButton.blockSignals(True)
-            self.readyPushButton.setChecked(newState)
-            self.readyPushButton.blockSignals(False)
-        self.updateReadyIcon()
-
-    def updateAfkState(self, newState):
-        oldState = self.afkPushButton.isChecked()
-        if newState != oldState and newState is not None:
-            self.afkPushButton.blockSignals(True)
-            self.afkPushButton.setChecked(newState)
-            self.afkPushButton.blockSignals(False)
-        self.updateAfkIcon()
+    def updateReadyAfkRadio(self, ready, afk):
+        # Reflect the current user's status in the three-way radio. setChecked (programmatic) does
+        # not emit clicked, so the selection handlers are not re-entered - no blockSignals needed.
+        if afk:
+            self.afkRadio.setChecked(True)
+        elif ready:
+            self.readyRadio.setChecked(True)
+        else:
+            self.notReadyRadio.setChecked(True)
 
     @needsClient
     def playlistItemClicked(self, item):
@@ -1645,30 +1640,28 @@ class MainWindow(QtWidgets.QMainWindow):
         window.playlistGroup.setLayout(window.playlistLayout)
         window.listSplit.addWidget(window.playlistGroup)
 
-        window.readyPushButton = QtWidgets.QPushButton()
-        readyFont = QtGui.QFont()
-        readyFont.setWeight(QtGui.QFont.Bold)
-        window.readyPushButton.setText(getMessage("ready-guipushbuttonlabel"))
-        window.readyPushButton.setCheckable(True)
-        window.readyPushButton.setAutoExclusive(False)
-        window.readyPushButton.toggled.connect(self.changeReadyState)
-        window.readyPushButton.setFont(readyFont)
-        window.readyPushButton.setStyleSheet(constants.STYLE_READY_PUSHBUTTON)
-        window.readyPushButton.setToolTip(getMessage("ready-tooltip"))
-        window.listLayout.addWidget(window.readyPushButton, Qt.AlignRight)
+        # Three-way status radio: Ready / Not ready / AFK (mutually exclusive). One logical choice,
+        # so exactly one is selected. The AFK option starts disabled and is enabled by setFeatures
+        # only when the server advertises the "afk" feature.
+        window.readyAfkButtonGroup = QtWidgets.QButtonGroup(window)
+        window.readyRadio = QtWidgets.QRadioButton(getMessage("ready-radio-label"))
+        window.readyRadio.setToolTip(getMessage("ready-tooltip"))
+        window.readyAfkButtonGroup.addButton(window.readyRadio)
+        window.readyRadio.clicked.connect(self.selectReady)
+        window.listLayout.addWidget(window.readyRadio, Qt.AlignRight)
 
-        window.afkPushButton = QtWidgets.QPushButton()
-        afkFont = QtGui.QFont()
-        afkFont.setWeight(QtGui.QFont.Bold)
-        window.afkPushButton.setText(getMessage("afk-guipushbuttonlabel"))
-        window.afkPushButton.setCheckable(True)
-        window.afkPushButton.setAutoExclusive(False)
-        window.afkPushButton.toggled.connect(self.changeAfkState)
-        window.afkPushButton.setFont(afkFont)
-        window.afkPushButton.setStyleSheet(constants.STYLE_READY_PUSHBUTTON)
-        window.afkPushButton.setToolTip(getMessage("afk-tooltip"))
-        window.afkPushButton.setEnabled(False)  # enabled by setFeatures on servers that support AFK
-        window.listLayout.addWidget(window.afkPushButton, Qt.AlignRight)
+        window.notReadyRadio = QtWidgets.QRadioButton(getMessage("notready-radio-label"))
+        window.notReadyRadio.setToolTip(getMessage("notready-tooltip"))
+        window.readyAfkButtonGroup.addButton(window.notReadyRadio)
+        window.notReadyRadio.clicked.connect(self.selectNotReady)
+        window.listLayout.addWidget(window.notReadyRadio, Qt.AlignRight)
+
+        window.afkRadio = QtWidgets.QRadioButton(getMessage("afk-radio-label"))
+        window.afkRadio.setToolTip(getMessage("afk-tooltip"))
+        window.readyAfkButtonGroup.addButton(window.afkRadio)
+        window.afkRadio.clicked.connect(self.selectAfk)
+        window.afkRadio.setEnabled(False)  # enabled by setFeatures on servers that support AFK
+        window.listLayout.addWidget(window.afkRadio, Qt.AlignRight)
         if isMacOS(): window.listLayout.setContentsMargins(0, 0, 0, 10)
 
         window.autoplayLayout = QtWidgets.QHBoxLayout()
@@ -1916,17 +1909,28 @@ class MainWindow(QtWidgets.QMainWindow):
         if self._syncplayClient:
             self._syncplayClient.getUserList()
 
-    def changeReadyState(self):
-        self.updateReadyIcon()
+    def selectReady(self):
         if self._syncplayClient:
-            self._syncplayClient.changeReadyState(self.readyPushButton.isChecked())
+            # Server auto-clears AFK when readiness is manually changed, so this one call covers
+            # the "was AFK, now Ready" transition too.
+            self._syncplayClient.changeReadyState(True)
         else:
             self.showDebugMessage("Tried to change ready state too soon.")
 
-    def changeAfkState(self):
-        self.updateAfkIcon()
+    def selectNotReady(self):
         if self._syncplayClient:
-            self._syncplayClient.changeAfkState(self.afkPushButton.isChecked())
+            if self._syncplayClient.userlist.currentUser.isAfk():
+                # AFK already forces ready=False, so changeReadyState(False) would be a no-op and
+                # leave AFK set - clear AFK instead (leaves the user not-ready).
+                self._syncplayClient.changeAfkState(False)
+            else:
+                self._syncplayClient.changeReadyState(False)
+        else:
+            self.showDebugMessage("Tried to change ready state too soon.")
+
+    def selectAfk(self):
+        if self._syncplayClient:
+            self._syncplayClient.changeAfkState(True)
         else:
             self.showDebugMessage("Tried to change AFK state too soon.")
 
@@ -1952,20 +1956,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self._syncplayClient.changeAutoplayState(self.autoplayPushButton.isChecked())
         else:
             self.showDebugMessage("Tried to set AutoplayState too soon")
-
-    def updateReadyIcon(self):
-        ready = self.readyPushButton.isChecked()
-        if ready:
-            self.readyPushButton.setIcon(QtGui.QPixmap(resourcespath + 'tick_checkbox.png'))
-        else:
-            self.readyPushButton.setIcon(QtGui.QPixmap(resourcespath + 'empty_checkbox.png'))
-
-    def updateAfkIcon(self):
-        afk = self.afkPushButton.isChecked()
-        if afk:
-            self.afkPushButton.setIcon(QtGui.QPixmap(resourcespath + 'clock_go.png'))
-        else:
-            self.afkPushButton.setIcon(QtGui.QPixmap(resourcespath + 'empty_checkbox.png'))
 
     def updateAutoPlayIcon(self):
         ready = self.autoplayPushButton.isChecked()

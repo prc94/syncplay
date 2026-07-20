@@ -305,7 +305,7 @@ for k in keys:
 bad = [l for l in M.getMissingStrings().splitlines() if "Unused" in l and "afk" in l.lower()]
 check("no afk keys leaked to non-English dicts", not bad, repr(bad))
 
-# ---------- GUI: offscreen MainWindow (AFK button + delegate) ----------
+# ---------- GUI: offscreen MainWindow (three-way ready/AFK radio + delegate) ----------
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 gui_ok, gui_detail = False, ""
 try:
@@ -314,16 +314,50 @@ try:
     from syncplay.ui.gui import MainWindow
     w = MainWindow()
     steps = []
-    steps.append(("button constructed + starts disabled",
-                  hasattr(w, "afkPushButton") and w.afkPushButton.isCheckable() and not w.afkPushButton.isEnabled()))
+    radios = [w.readyRadio, w.notReadyRadio, w.afkRadio]
+    steps.append(("three radios exist", all(isinstance(r, QtWidgets.QRadioButton) for r in radios)))
+    steps.append(("radios share one exclusive group",
+                  set(w.readyAfkButtonGroup.buttons()) == set(radios) and w.readyAfkButtonGroup.exclusive()))
+    steps.append(("afk radio starts disabled", not w.afkRadio.isEnabled()))
+    # feature gating
     w.setFeatures({"readiness": True, "chat": True, "sharedPlaylists": True, "afk": True})
-    steps.append(("enabled when server advertises afk", w.afkPushButton.isEnabled()))
+    steps.append(("afk radio enabled when server advertises afk", w.afkRadio.isEnabled()))
     w.setFeatures({"readiness": True, "chat": True, "sharedPlaylists": True})  # stock server, no afk key
-    steps.append(("disabled on stock server (no KeyError)", not w.afkPushButton.isEnabled()))
-    w.updateAfkState(True)
-    steps.append(("updateAfkState(True) checks button", w.afkPushButton.isChecked()))
-    w.updateAfkState(False)
-    steps.append(("updateAfkState(False) unchecks", not w.afkPushButton.isChecked()))
+    steps.append(("afk radio disabled on stock server (no KeyError)", not w.afkRadio.isEnabled()))
+    steps.append(("ready/not-ready stay enabled on stock server",
+                  w.readyRadio.isEnabled() and w.notReadyRadio.isEnabled()))
+    w.setFeatures({"readiness": False, "chat": True, "sharedPlaylists": True})
+    steps.append(("all three disabled when readiness unsupported",
+                  not any(r.isEnabled() for r in radios)))
+    w.setFeatures({"readiness": True, "chat": True, "sharedPlaylists": True, "afk": True})  # re-enable
+    # updateReadyAfkRadio selects the right option (and exclusivity unchecks the rest)
+    for ready, afk, want in [(True, False, w.readyRadio), (False, False, w.notReadyRadio),
+                             (None, False, w.notReadyRadio), (True, True, w.afkRadio),
+                             (False, True, w.afkRadio)]:
+        w.updateReadyAfkRadio(ready, afk)
+        sel = [r for r in radios if r.isChecked()]
+        steps.append(("radio ({}, {}) -> only the right one".format(ready, afk),
+                      sel == [want]))
+    # selection handlers dispatch to the correct client calls
+    import unittest.mock as _mock
+    w._syncplayClient = _mock.Mock()
+    w._syncplayClient.userlist.currentUser.isAfk.return_value = False
+    w.selectReady()
+    steps.append(("selectReady -> changeReadyState(True)",
+                  w._syncplayClient.changeReadyState.call_args[0] == (True,)))
+    w._syncplayClient.reset_mock(); w._syncplayClient.userlist.currentUser.isAfk.return_value = False
+    w.selectNotReady()
+    steps.append(("selectNotReady (not afk) -> changeReadyState(False)",
+                  w._syncplayClient.changeReadyState.call_args[0] == (False,) and not w._syncplayClient.changeAfkState.called))
+    w._syncplayClient.reset_mock(); w._syncplayClient.userlist.currentUser.isAfk.return_value = True
+    w.selectNotReady()
+    steps.append(("selectNotReady (afk) -> changeAfkState(False)",
+                  w._syncplayClient.changeAfkState.call_args[0] == (False,) and not w._syncplayClient.changeReadyState.called))
+    w._syncplayClient.reset_mock()
+    w.selectAfk()
+    steps.append(("selectAfk -> changeAfkState(True)",
+                  w._syncplayClient.changeAfkState.call_args[0] == (True,)))
+    # userlist delegate still paints an AFK row (icons unchanged)
     model = QtGui.QStandardItemModel()
     item = QtGui.QStandardItem("alice")
     item.setData(True, QtCore.Qt.UserRole + constants.USERITEM_AFK_ROLE)
@@ -338,7 +372,7 @@ try:
     gui_detail = "; ".join(n for n, v in steps if not v) or "all live GUI steps verified"
 except Exception as e:
     gui_detail = "offscreen construction failed: {}: {}".format(type(e).__name__, e)
-check("GUI: offscreen MainWindow AFK button + delegate", gui_ok, gui_detail)
+check("GUI: offscreen MainWindow ready/AFK radio + delegate", gui_ok, gui_detail)
 
 # ---------- constants ----------
 check("COMMANDS_AFK present", constants.COMMANDS_AFK == ["afk"])
