@@ -85,11 +85,17 @@ clients by reusing the `sendControlledRoomAuthStatus` broadcast.
 
 ### Chat command dispatchers (two of them — don't confuse)
 - **Server-side** (`SyncFactory.sendChat`): exact first-token match (`/osd`, `/admin`, `/lock`,
-  `/unlock`, `/tracks`) *before* chat truncation; unknown `/foo` falls through as ordinary chat;
-  `/admin` must NEVER fall through (password leak). Errors/acks go as private chat to the sender.
+  `/unlock`, `/tracks`, `/afk`) *before* chat truncation; an unknown `/foo` is **rejected** — the
+  sender gets a private `unknown-command-chat-message` warning (echoing only the command token,
+  never the args, so a mistyped `/admin` can't leak) and it is **not** broadcast to the room.
+  Errors/acks go as private chat to the sender. (Consequence: literal chat starting with `/`
+  no longer reaches the room — the old `//`-escape produces `/foo` on the wire, which is warned.)
 - **Client-side** (`consoleUI.executeCommand`, driven by `constants.COMMANDS_*`): the single
   dispatch point for slash-commands typed in the GUI chat box, mpv chat overlay, and console —
   mpv chat starting with `/` becomes `executeCommand(...)`, it never reaches `client.sendChat`.
+  A command it does **not** recognize is forwarded to the server as `"/" + normalized` chat, so
+  server-side commands (`/lock`, `/admin`, `/osd`, `/unlock`) work from every input surface;
+  known local commands (`/afk`, `/list`, `/pause`, `/help`, …) are still handled on the client.
 
 ### mpv ↔ lua plumbing (`players/mpv.py` + `resources/syncplayintf.lua`)
 - Client→lua: `sendLine(["script-message-to", "syncplayintf", "<msg>", jsonArg])`.

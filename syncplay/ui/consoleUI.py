@@ -257,7 +257,13 @@ class ConsoleUI(threading.Thread):
             if self._tryAdvancedCommands(data):
                 return
             if command.group('command') not in constants.COMMANDS_HELP:
-                self.showMessage(getMessage("unrecognized-command-notification"))
+                # Not a client-side command: forward it to the server as a slash-command so
+                # server-side commands (/lock, /unlock, /admin, /osd, ...) work from the chat
+                # box, mpv overlay and console. The server runs known commands and privately
+                # warns on genuinely unknown ones. Normalise to exactly one leading slash
+                # (the GUI strips it before dispatch; the console keeps whatever was typed).
+                self._syncplayClient.sendChat("/" + data.lstrip("/"))
+                return
             self.showMessage(getMessage("commandlist-notification"), True)
             self.showMessage(getMessage("commandlist-notification/room"), True)
             self.showMessage(getMessage("commandlist-notification/list"), True)

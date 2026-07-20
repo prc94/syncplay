@@ -515,6 +515,7 @@ en = {
     "track-proposal-osd-message": "Operator {} recommends: audio {}, subtitles {}", # Admin username, audio description, sub description
     "server-trusted-domains-notification": "Added {} trusted domain(s) shared by {} for this session", # Count, admin username
     "pause-warning-default-message": "Paused for {} - please resume when ready", # Default --pause-warning-message; optional {} = pause duration
+    "unknown-command-chat-message": "Unknown command '{}' - not sent to the room. Type /help for a list of commands.", # Command token
     "osd-command-unauthorised-chat-message": "Only room operators and server admins can use /osd.",
     "admin-login-success-chat-message": "You are now a server admin.",
     "admin-login-fail-chat-message": "Wrong admin password.",

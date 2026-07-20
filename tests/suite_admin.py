@@ -152,10 +152,16 @@ sender._room = droom; other._room = droom
 droom._watchers = {"sender": sender, "other": other}
 
 f.sendChat(sender, "/unknown hello")
-check("unknown /command falls through as chat", other.chats == ["/unknown hello"], repr(other.chats))
+check("unknown /command: private warning to sender, NOT broadcast",
+      other.chats == [] and len(sender.chats) == 1 and "/unknown" in sender.chats[0], repr(sender.chats))
+check("unknown /command warning omits arguments (no leak)", "hello" not in sender.chats[0], repr(sender.chats))
 other.chats.clear(); sender.chats.clear()
 f.sendChat(sender, "/osdx not a command")
-check("/osdx (prefix collision) falls through as chat", other.chats == ["/osdx not a command"])
+check("/osdx (prefix collision): warned, not broadcast",
+      other.chats == [] and len(sender.chats) == 1 and "/osdx" in sender.chats[0], repr(sender.chats))
+other.chats.clear(); sender.chats.clear()
+f.sendChat(sender, "plain chat message")
+check("normal chat (no slash) still broadcasts", other.chats == ["plain chat message"], repr(other.chats))
 other.chats.clear(); sender.chats.clear()
 
 f.sendChat(sender, "/admin WRONG")
@@ -273,6 +279,27 @@ out = []
 cp.sendMessage = lambda m: out.append(m)
 cp.sendAdminAuth("pw123")
 check("sendAdminAuth payload shape", out == [{"Set": {"adminAuth": {"password": "pw123"}}}], repr(out))
+
+# ---------- client-side command forwarding (consoleUI.executeCommand) ----------
+from syncplay.ui.consoleUI import ConsoleUI
+cui = ConsoleUI.__new__(ConsoleUI)
+cui._syncplayClient = mock.Mock()
+cui.showMessage = lambda *a, **k: None
+cui.executeCommand("lock")  # GUI path: slash already stripped
+check("client forwards unknown command to server as /command",
+      cui._syncplayClient.sendChat.call_args is not None and cui._syncplayClient.sendChat.call_args[0] == ("/lock",),
+      repr(cui._syncplayClient.sendChat.call_args))
+cui._syncplayClient.reset_mock()
+cui.executeCommand("/admin S3cret")  # console path: leading slash kept, args preserved
+check("client normalises a single slash + preserves args",
+      cui._syncplayClient.sendChat.call_args[0] == ("/admin S3cret",), repr(cui._syncplayClient.sendChat.call_args))
+cui._syncplayClient.reset_mock()
+cui.executeCommand("t")  # known client command
+check("known client command handled locally, not forwarded",
+      cui._syncplayClient.toggleReady.called and not cui._syncplayClient.sendChat.called)
+cui._syncplayClient.reset_mock()
+cui.executeCommand("help")  # help stays local
+check("help stays local, not forwarded", not cui._syncplayClient.sendChat.called)
 
 # ---------- client config plumbing ----------
 from syncplay.ui.ConfigurationGetter import ConfigurationGetter as ClientCG

@@ -145,7 +145,8 @@ check("/tracks from legacy: private notice only",
       and peer.chats == [], repr(legacy.chats))
 legacy.chats.clear()
 f2.sendChat(legacy, "/tracksfoo bar")
-check("/tracksfoo falls through as chat", peer.chats == ["/tracksfoo bar"])
+check("/tracksfoo (unknown): private warning, not broadcast",
+      peer.chats == [] and len(legacy.chats) == 1 and "/tracksfoo" in legacy.chats[0], repr(legacy.chats))
 
 # ---------- server protocol Set branch ----------
 sp = SyncServerProtocol.__new__(SyncServerProtocol)

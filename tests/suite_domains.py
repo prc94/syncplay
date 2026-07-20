@@ -108,7 +108,8 @@ check("/domains from legacy: private notice only",
       and peer.chats == [], repr(leg.chats))
 leg.chats.clear()
 f.sendChat(leg, "/domainsfoo bar")
-check("/domainsfoo falls through as chat", peer.chats == ["/domainsfoo bar"])
+check("/domainsfoo (unknown): private warning, not broadcast",
+      peer.chats == [] and len(leg.chats) == 1 and "/domainsfoo" in leg.chats[0], repr(leg.chats))
 
 # server handleSet dispatch
 sp = SyncServerProtocol.__new__(SyncServerProtocol)

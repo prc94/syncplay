@@ -92,10 +92,12 @@ A.send({"Chat": "/osd dur=2 Admin says hi"})
 assert pump_until([A, B], lambda: chats_matching(B, "Admin says hi"))
 check(SCEN, "admin /osd works in plain room (B got fallback chat)", True)
 
-# 6. token matching: /osdx is ordinary chat
+# 6. unknown /osdx: private warning to the sender, never broadcast to the room
 A.send({"Chat": "/osdx just chat"})
-assert pump_until([A, B], lambda: chats_matching(B, "/osdx just chat"))
-check(SCEN, "/osdx falls through as ordinary chat", True)
+assert pump_until([A, B], lambda: chats_matching(A, "Unknown command"))
+pump_for([A, B], 0.5)
+check(SCEN, "unknown /osdx: warned to sender, not broadcast",
+      len(chats_matching(A, "/osdx")) >= 1 and not chats_matching(B, "/osdx just chat"))
 
 # 7. modded-client auto-auth via Set:adminAuth in a separate room
 C = MiniClient("modC", "c2", "1.7.6", {"chat": True}, role="leader")

@@ -239,7 +239,8 @@ class SyncFactory(Factory):
     def sendChat(self, watcher, message):
         # Server-command interception happens before chat truncation (/osd carries verbose ASS
         # markup with its own cap; /admin carries a password that must never reach the room).
-        # First-token exact match so unknown /commands still pass through as ordinary chat.
+        # First-token exact match; an unknown /command is warned back to the sender privately and
+        # never broadcast (see the fall-through below), so client chat boxes can forward commands.
         if message.startswith("/"):
             command = message.split(" ", 1)[0].lower()
             if command == constants.OSD_MESSAGE_COMMAND:
@@ -271,6 +272,12 @@ class SyncFactory(Factory):
                 watcher.sendChatMessage({"message": getMessage("tracks-command-notice-chat-message"),
                                          "username": watcher.getName()})
                 return
+            # Unknown slash-command (e.g. one an updated client forwarded from its chat box):
+            # warn the sender privately and do NOT broadcast it to the room. Only the command
+            # token is echoed back, never the arguments (a mistyped /admin could carry a password).
+            watcher.sendChatMessage({"message": getMessage("unknown-command-chat-message").format(command),
+                                     "username": watcher.getName()})
+            return
         self.setAfk(watcher, False)  # chatting is activity
         message = truncateText(message, self.maxChatMessageLength)
         messageDict = {"message": message, "username": watcher.getName()}
