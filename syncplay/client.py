@@ -92,6 +92,11 @@ class SyncplayClient(object):
         self.hadFirstStateUpdate = False
         self.lastLeftTime = 0
         self.lastPausedOnLeaveTime = None
+        # One-shot: set when the AFK keybind issues its "step away" pause, consumed when that
+        # pause is observed so it bypasses the readiness-toggle-on-pause machinery (going AFK is
+        # already not-ready; letting _toggleReady run would race with the Set:afk echo and could
+        # clear the AFK we just set or flip readiness).
+        self._afkKeybindPausePending = False
         self.lastLeftUser = ""
         self.protocolFactory = SyncClientFactory(self)
         self.ui = UiManager(self, ui)
@@ -241,7 +246,13 @@ class SyncplayClient(object):
         self._playerPosition = position
         self._playerPaused = paused
         currentLength = self.userlist.currentUser.file["duration"] if self.userlist.currentUser.file else 0
-        if (
+        if pauseChange and paused and self._afkKeybindPausePending:
+            # This pause is the AFK keybind stepping away, not a readiness action (nor a reason to
+            # autoplay the next file): let it propagate as a normal state so the room pauses, but
+            # skip the readiness-toggle-on-pause machinery, which would otherwise race with the
+            # Set:afk echo and could clear the AFK we just set or flip readiness.
+            self._afkKeybindPausePending = False
+        elif (
             pauseChange and paused and currentLength > constants.PLAYLIST_LOAD_NEXT_FILE_MINIMUM_LENGTH
             and abs(position - currentLength) < constants.PLAYLIST_LOAD_NEXT_FILE_TIME_FROM_END_THRESHOLD
         ):
@@ -1164,6 +1175,7 @@ class SyncplayClient(object):
         # "returned" activity, so the later pause echo won't clear the AFK we just set.
         # Toggling back off just clears AFK - it leaves the pause state alone.
         if not self.userlist.currentUser.isAfk() and not self.getPlayerPaused():
+            self._afkKeybindPausePending = True
             self.setPaused(True)
         self.toggleAfk()
 

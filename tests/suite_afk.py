@@ -292,6 +292,92 @@ check("keybind: already paused + not-AFK -> just set AFK",
 check("keybind: already AFK -> just toggle off, never pauses",
       run_afk_keybind(True, False) == [("toggle",)], repr(run_afk_keybind(True, False)))
 
+# The keybind pause must NOT be re-interpreted by the readiness-toggle-on-pause machinery
+# (_toggleReady): that races with the Set:afk echo and could clear the AFK we just set or flip
+# readiness (observed as the status snapping to "Not ready" right after going AFK). Drive the real
+# updatePlayerStatus and assert the only thing sent is setAfk - no setReady, no player revert.
+def run_afk_keybind_then_pause(canControl):
+    c = SyncplayClient.__new__(SyncplayClient)
+    c.serverVersion = "1.7.6"
+    c.serverFeatures = {"afk": True, "readiness": True}
+    cu = SyncplayUser("me", "d"); cu.setReady(True); cu.setAfk(False)
+    cu.file = {"name": "m.mkv", "duration": 3600, "path": "/m.mkv"}
+    cu.canControl = lambda: canControl
+    c.userlist = types.SimpleNamespace(currentUser=cu, isReady=lambda n: cu.isReady())
+    c._playerPaused = False; c._globalPaused = False
+    c._playerPosition = 5.0; c._globalPosition = 5.0
+    c._lastGlobalUpdate = time.time(); c._lastPlayerUpdate = time.time()
+    c.lastPausedOnLeaveTime = None; c.lastRewindTime = None; c.lastUpdatedFileTime = None
+    c.lastAdvanceTime = None; c.playerPositionBeforeLastSeek = 5.0
+    c._userOffset = 0.0; c.waitingToLoadNewfile = False
+    c._afkKeybindPausePending = False
+    wire = []
+    class FakePlayer:
+        def setPaused(self, v): wire.append(("player.setPaused", v))
+        def setPosition(self, p): pass
+    c._player = FakePlayer()
+    class FakeProto:
+        def setAfk(self, v): wire.append(("setAfk", v))
+        def setReady(self, v, m, u=None): wire.append(("setReady", v, m))
+        def sendState(self, *a, **k): pass
+    c._protocol = FakeProto()
+    c.ui = types.SimpleNamespace(showMessage=lambda *a, **k: None,
+                                 showDebugMessage=lambda *a, **k: None,
+                                 showErrorMessage=lambda *a, **k: None,
+                                 userListChange=lambda: None)
+    c._warnings = types.SimpleNamespace(checkReadyStates=lambda: None)
+    c.playlist = types.SimpleNamespace(advancePlaylistCheck=lambda: None,
+                                       notJustChangedPlaylist=lambda: True,
+                                       canSwitchToNextPlaylistIndex=lambda: False)
+    c.toggleAfkWithPause()          # issues player pause + sends setAfk, arms the one-shot
+    c.updatePlayerStatus(True, 5.0) # player reports the pause before the Set:afk echo arrives
+    return wire
+
+for role, ctl in (("controller", True), ("non-controller", False)):
+    w = run_afk_keybind_then_pause(ctl)
+    check("keybind pause (%s): sends setAfk(True)" % role, ("setAfk", True) in w, repr(w))
+    check("keybind pause (%s): no spurious setReady" % role,
+          not any(e[0] == "setReady" for e in w), repr(w))
+    check("keybind pause (%s): pause not reverted on the player" % role,
+          ("player.setPaused", False) not in w, repr(w))
+
+# The one-shot must not leak into the next, genuine user pause (that one SHOULD toggle readiness).
+def normal_user_pause_still_toggles_ready():
+    c = SyncplayClient.__new__(SyncplayClient)
+    c.serverVersion = "1.7.6"; c.serverFeatures = {"afk": True, "readiness": True}
+    cu = SyncplayUser("me", "d"); cu.setReady(True); cu.setAfk(False)
+    cu.file = {"name": "m.mkv", "duration": 3600, "path": "/m.mkv"}
+    cu.canControl = lambda: True
+    c.userlist = types.SimpleNamespace(currentUser=cu, isReady=lambda n: cu.isReady())
+    c._playerPaused = False; c._globalPaused = False
+    c._playerPosition = 5.0; c._globalPosition = 5.0
+    c._lastGlobalUpdate = time.time(); c._lastPlayerUpdate = time.time()
+    c.lastPausedOnLeaveTime = None; c.lastRewindTime = None; c.lastUpdatedFileTime = None
+    c.lastAdvanceTime = None; c.playerPositionBeforeLastSeek = 5.0
+    c._userOffset = 0.0; c.waitingToLoadNewfile = False
+    c._afkKeybindPausePending = False   # no keybind involved this time
+    wire = []
+    c._player = types.SimpleNamespace(setPaused=lambda v: None, setPosition=lambda p: None)
+    class FakeProto:
+        def setAfk(self, v): wire.append(("setAfk", v))
+        def setReady(self, v, m, u=None): wire.append(("setReady", v, m))
+        def sendState(self, *a, **k): pass
+    c._protocol = FakeProto()
+    c.ui = types.SimpleNamespace(showMessage=lambda *a, **k: None,
+                                 showDebugMessage=lambda *a, **k: None,
+                                 showErrorMessage=lambda *a, **k: None,
+                                 userListChange=lambda: None)
+    c._warnings = types.SimpleNamespace(checkReadyStates=lambda: None)
+    c.playlist = types.SimpleNamespace(advancePlaylistCheck=lambda: None,
+                                       notJustChangedPlaylist=lambda: True,
+                                       canSwitchToNextPlaylistIndex=lambda: False)
+    c.updatePlayerStatus(True, 5.0)
+    return wire
+
+nw = normal_user_pause_still_toggles_ready()
+check("normal user pause still toggles readiness (guard didn't leak)",
+      any(e[0] == "setReady" for e in nw), repr(nw))
+
 # ---------- client-side userlist + user model ----------
 u = SyncplayUser("bob", "d")
 check("SyncplayUser defaults not AFK", u.isAfk() is False)
