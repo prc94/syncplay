@@ -655,6 +655,13 @@ mp.add_key_binding("Ctrl+t", "syncplay_publish_tracks", publish_tracks)
 mp.add_key_binding("Alt+t", "syncplay_apply_tracks", apply_tracks_keybind)
 mp.register_script_message('apply-tracks', apply_tracks_keybind)
 
+-- Admin: publish this client's trusted domains to the room
+function publish_domains()
+    mp.commandv('print-text', '<SyncplayPublishDomains>')
+end
+mp.add_key_binding("Ctrl+d", "syncplay_publish_domains", publish_domains)
+mp.register_script_message('publish-domains', publish_domains)
+
 mp.register_event("file-loaded", function()
     apply_track_proposal(true)  -- catch-up for late file switches + same-layout next episodes
 end)

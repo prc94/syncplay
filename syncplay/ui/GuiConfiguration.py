@@ -992,6 +992,9 @@ class ConfigDialog(QtWidgets.QDialog):
         self.trusteddomainsTextEdit.setObjectName(constants.LOAD_SAVE_MANUALLY_MARKER + "trusteddomains-arguments")
         self.trusteddomainsTextEdit.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
         self.trusteddomainsSettingsLayout.addWidget(self.trusteddomainsTextEdit)
+        self.receiveServerTrustedDomainsCheckbox = QCheckBox(getMessage("receiveservertrusteddomains-label"))
+        self.receiveServerTrustedDomainsCheckbox.setObjectName("receiveServerTrustedDomains")
+        self.trusteddomainsSettingsLayout.addWidget(self.receiveServerTrustedDomainsCheckbox)
         self.trusteddomainsSettingsGroup.setMaximumHeight(self.trusteddomainsSettingsGroup.minimumSizeHint().height())
 
         self.othersyncSettingsGroup.setLayout(self.othersyncSettingsLayout)

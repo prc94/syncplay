@@ -63,6 +63,10 @@ check("track OSD text ass-escaped", "ass_escape(text)" in sto)
 check("file-loaded catch-up uses applied wording", 'show_track_osd("Applied "' in src)
 check("apply keybind registered", 'mp.add_key_binding("Alt+t", "syncplay_apply_tracks", apply_tracks_keybind)' in src)
 check("apply-tracks script-message registered", "mp.register_script_message('apply-tracks'" in src)
+check("domains keybind + handler registered",
+      'mp.add_key_binding("Ctrl+d", "syncplay_publish_domains", publish_domains)' in src
+      and "mp.register_script_message('publish-domains'" in src
+      and "<SyncplayPublishDomains>" in src)
 kb = re.search(r"function apply_tracks_keybind\(.*?\nend\n", src, re.S).group(0)
 check("keybind explains none/idle/mismatch", all(s in kb for s in ('"none"', '"idle"', '"mismatch"')))
 check("apply returns status strings", all('return "%s"' % s in tp_apply for s in ("none", "idle", "mismatch", "applied")) or

@@ -323,6 +323,8 @@ try:
                 "publicServers": []})
     dlg = ConfigDialog(cfg, [], None, dict(cfg))
     gui_ok = dlg.adminpassTextbox.text() == "guiPW" and dlg.adminpassTextbox.echoMode() == QtWidgets.QLineEdit.Password
+    gui_ok = gui_ok and hasattr(dlg, "receiveServerTrustedDomainsCheckbox") \
+        and dlg.receiveServerTrustedDomainsCheckbox.objectName() == "receiveServerTrustedDomains"
     gui_detail = "field text + echo mode verified live"
     # live save round-trip
     dlg.adminpassTextbox.setText("changedPW")

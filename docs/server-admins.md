@@ -86,6 +86,33 @@ file loaded (slow loads, browsing) are handled gracefully: the proposal is store
 when a matching file finally loads. Proposals persist until replaced and end when the room
 empties.
 
+## Trusted domains
+
+Syncplay only auto-switches the room to a streamed **URL** when its domain is in each viewer's
+**trusted domains** list (and "only switch to trusted domains" is enabled). An admin can share the
+trusted-domains list **from their own client** so the room can follow along to the operator's
+streaming host.
+
+**Publishing** (admin, any updated client): press **Ctrl+D** in mpv (rebindable via the
+`syncplay_publish_domains` script binding) or type **`/domains`** into the Syncplay chat. This posts
+*your client's* current trusted-domains list to the room; the server confirms privately.
+
+**What others get:**
+
+* **Updated clients:** the shared domains are **added** to their own trusted list **for the current
+  session only** (never written to their config), with a brief notification. They can opt out — see
+  below.
+* **Legacy clients:** an informational chat line listing the domains (they can add them manually).
+
+Shared domains are **merged, never replacing** a user's own list, and are **dropped on disconnect**
+or when the room empties. This only affects clients that have "only switch to trusted domains"
+enabled.
+
+**Opting out:** each client has an *"Accept trusted domains shared by server admins"* setting (in
+the Trusted domains section of the settings dialog, on by default). Unticking it makes that client
+ignore shared domains entirely; re-ticking it applies the current room list again without
+reconnecting.
+
 ## Security notes
 
 * The password travels **in plain text** inside the chat command / auth message — run the server

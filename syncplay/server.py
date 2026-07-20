@@ -155,6 +155,8 @@ class SyncFactory(Factory):
             self._broadcastAdminStatus(watcher)  # keep the operator icon in the new room
         if room.getTrackProposal() is not None:
             self._sendTrackProposalToWatcher(watcher, room.getTrackProposal())  # late joiners get the recommendation
+        if room.getTrustedDomains() is not None:
+            self._sendTrustedDomainsToWatcher(watcher, room.getTrustedDomains())  # late joiners get the domains
 
     def sendRoomSwitchMessage(self, watcher):
         l = lambda w: w.sendSetting(watcher.getName(), watcher.getRoom(), None, None)
@@ -174,6 +176,7 @@ class SyncFactory(Factory):
                 self._stopPauseWarningTimer(room)
                 room.yapReset()
                 room.setTrackProposal(None)
+                room.setTrustedDomains(None)
             if self.roomsDbFile:
                 l = lambda w: w.sendList(toGUIOnly=True)
                 self._roomManager.broadcast(watcher, l)
@@ -247,6 +250,11 @@ class SyncFactory(Factory):
                 return
             if command == constants.UNLOCK_COMMAND:
                 self._handleLockChatCommand(watcher, locked=False)
+                return
+            if command == constants.PUBLISH_DOMAINS_COMMAND:
+                # Only reaches the server from legacy clients (updated clients publish via Set).
+                watcher.sendChatMessage({"message": getMessage("domains-command-notice-chat-message"),
+                                         "username": watcher.getName()})
                 return
             if command == constants.TRACK_PROPOSAL_COMMAND:
                 # Reaches the server only from legacy/stock clients (modded clients intercept
@@ -362,6 +370,49 @@ class SyncFactory(Factory):
                 options["size"] = value
             remainder = rest.strip()
         return options, remainder
+
+    def setTrustedDomains(self, watcher, payload):
+        # Admin publishes their own client's trusted-domains list to the room. Capable clients get
+        # Set:trustedDomains (merged session-only, subject to their opt-out); others get an
+        # informational chat line.
+        if not watcher.isAdmin():
+            watcher.sendChatMessage({"message": getMessage("domains-unauthorised-chat-message"),
+                                     "username": watcher.getName()})
+            return
+        room = watcher.getRoom()
+        if room is None or not isinstance(payload, dict):
+            return
+        rawDomains = payload.get("domains")
+        if not isinstance(rawDomains, list):
+            return
+        domains = []
+        for entry in rawDomains:
+            if not isinstance(entry, str):
+                continue
+            entry = entry.strip().lower()[:constants.TRUSTED_DOMAINS_MAX_LENGTH]
+            if entry and entry not in domains:
+                domains.append(entry)
+            if len(domains) >= constants.TRUSTED_DOMAINS_MAX_COUNT:
+                break
+        if not domains:
+            watcher.sendChatMessage({"message": getMessage("domains-empty-chat-message"),
+                                     "username": watcher.getName()})
+            return
+        proposal = {"domains": domains, "by": watcher.getName()}
+        room.setTrustedDomains(proposal)
+        for receiver in room.getWatchers():
+            self._sendTrustedDomainsToWatcher(receiver, proposal)
+        watcher.sendChatMessage({"message": getMessage("domains-published-chat-message").format(len(domains)),
+                                 "username": watcher.getName()})
+
+    def _sendTrustedDomainsToWatcher(self, receiver, proposal):
+        if receiver.supportsFeature("trustedDomains"):
+            receiver.sendTrustedDomains(proposal)
+        else:
+            message = getMessage("domains-shared-chat-message").format(
+                proposal.get("by", ""), ", ".join(proposal.get("domains", [])))
+            receiver.sendChatMessage({"message": truncateText(message, self.maxChatMessageLength),
+                                     "username": proposal.get("by", "")})
 
     def setTrackProposal(self, watcher, payload):
         # Admin publishes their current audio/sub selection as the room's recommended default.
@@ -913,6 +964,7 @@ class Room(object):
         self._yapExpired = False  # True once the current pause exceeds YAP_TIMER_MAX_PAUSE; everything stays quiet until the next pause
         self._locked = False  # Locked by a server admin: only admins control playback/playlist. Runtime-only
         self._trackProposal = None  # Admin-recommended default audio/sub tracks (dict). Runtime-only
+        self._trustedDomains = None  # Admin-published trusted domains for the room (dict). Runtime-only
 
     def __str__(self, *args, **kwargs):
         return self.getName()
@@ -1091,6 +1143,12 @@ class Room(object):
     def setTrackProposal(self, proposal):
         self._trackProposal = proposal
 
+    def getTrustedDomains(self):
+        return self._trustedDomains
+
+    def setTrustedDomains(self, payload):
+        self._trustedDomains = payload
+
     def setPlaylist(self, files, setBy=None):
         if self.canControl(setBy):
             self._playlist = files
@@ -1252,6 +1310,9 @@ class Watcher(object):
 
     def sendTrackProposal(self, payload):
         self._connector.sendSet({"trackProposal": payload})
+
+    def sendTrustedDomains(self, payload):
+        self._connector.sendSet({"trustedDomains": payload})
 
     def sendList(self, toGUIOnly=False):
         if toGUIOnly and self.isGUIUser(self._connector.getFeatures()):

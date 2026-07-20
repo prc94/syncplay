@@ -485,6 +485,9 @@ class MpvPlayer(BasePlayer):
             line = line.replace(constants.MPV_INPUT_BACKSLASH_SUBSTITUTE_CHARACTER, "\\")
             self._listener.sendChat(line[6:-7])
 
+        if "<SyncplayPublishDomains>" in line:
+            self.reactor.callFromThread(self._client.publishTrustedDomains)
+
         if "<SyncplayTrackProposal>" in line:
             try:
                 payload = json.loads(line.split("<SyncplayTrackProposal>")[1].split("</SyncplayTrackProposal>")[0])

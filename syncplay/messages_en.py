@@ -280,6 +280,7 @@ en = {
     "unpause-ifminusersready-option": "Unpause if already ready or if all others ready and min users ready",
     "unpause-always": "Always unpause",
     "syncplay-trusteddomains-title": "Trusted domains (for streaming services and hosted content)",
+    "receiveservertrusteddomains-label": "Accept trusted domains shared by server admins",
 
     "chat-title": "Chat message input",
     "chatinputenabled-label": "Enable chat input via mpv",
@@ -451,6 +452,7 @@ en = {
     "unpause-ifothersready-tooltip": "If you press unpause when not ready, it will only unpause if others are ready.",
     "unpause-ifminusersready-tooltip": "If you press unpause when not ready, it will only unpause if others are ready and minimum users threshold is met.",
     "trusteddomains-arguments-tooltip": "Domains that it is okay for Syncplay to automatically switch to when shared playlists is enabled.",
+    "receiveservertrusteddomains-tooltip": "When enabled, trusted domains published by a server admin are added to your own list for this session only (never saved). Untick to ignore them.",
 
     "chatinputenabled-tooltip": "Enable chat input in mpv (press enter to chat, enter to send, escape to cancel)",
     "chatdirectinput-tooltip": "Skip having to press 'enter' to go into chat input mode in mpv. Press TAB in mpv to temporarily disable this feature.",
@@ -498,6 +500,7 @@ en = {
     "yap-timer-osd-paused-message": "Yap timer: {} (total {})", # Live overlay: current pause duration, total pause time for file
     "yap-timer-osd-total-message": "Total yapped this file: {}", # Overlay shown briefly on resume: total pause time for file
     "track-proposal-osd-message": "Operator {} recommends: audio {}, subtitles {}", # Admin username, audio description, sub description
+    "server-trusted-domains-notification": "Added {} trusted domain(s) shared by {} for this session", # Count, admin username
     "pause-warning-default-message": "Paused for {} - please resume when ready", # Default --pause-warning-message; optional {} = pause duration
     "osd-command-unauthorised-chat-message": "Only room operators and server admins can use /osd.",
     "admin-login-success-chat-message": "You are now a server admin.",
@@ -511,6 +514,11 @@ en = {
     "track-proposal-published-chat-message": "Track recommendation published to the room.",
     "track-proposal-unauthorised-chat-message": "Only server admins can publish track recommendations.",
     "tracks-command-notice-chat-message": "Track recommendations are published by server admins from a compatible player (Ctrl+T in mpv, or type /tracks there).",
+    "domains-unauthorised-chat-message": "Only server admins can publish trusted domains.",
+    "domains-published-chat-message": "Published {} trusted domain(s) to the room.", # Domain count
+    "domains-empty-chat-message": "Your trusted domains list is empty - nothing to publish.",
+    "domains-shared-chat-message": "{} shared trusted domains: {}", # Admin username, comma-separated domains
+    "domains-command-notice-chat-message": "Trusted domains are published by server admins from an updated client (Ctrl+D in mpv, or type /domains there).",
     "osd-command-usage-chat-message": "Usage: /osd [ass=1] [dur=secs] [colour=#RRGGBB] [pos=top|top-left|...|bottom-right] [size=N] message text (ass=1 enables raw ASS tags)",
 
     # Server notifications

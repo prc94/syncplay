@@ -85,6 +85,12 @@ ADMIN_COMMAND = "/admin"  # /admin <password> - authenticate as server admin
 LOCK_COMMAND = "/lock"  # Admin: lock the current plain room (only admins control playback)
 UNLOCK_COMMAND = "/unlock"  # Admin: unlock the current room
 
+# Admin-published trusted domains
+PUBLISH_DOMAINS_COMMAND = "/domains"  # Publish this client's trusted domains to the room (admin)
+TRUSTED_DOMAINS_MAX_COUNT = 100  # Cap on domains accepted in a single proposal
+TRUSTED_DOMAINS_MAX_LENGTH = 253  # Max hostname length
+MPV_PUBLISH_DOMAINS_KEY = "Ctrl+d"  # Default hotkey; script binding "syncplay_publish_domains"
+
 # Admin track proposals (recommended default audio/sub tracks)
 TRACK_PROPOSAL_COMMAND = "/tracks"  # Publish current tracks as the room recommendation (admin, compatible player)
 TRACK_PROPOSAL_MAX_NAME_LENGTH = 60
@@ -170,6 +176,7 @@ COMMANDS_NEXT = ["next", "qn"]
 COMMANDS_SETREADY = ['setready', 'sr']
 COMMANDS_SETNOTREADY = ['setready', 'snr']
 COMMANDS_TRACKS = ['tracks']
+COMMANDS_PUBLISH_DOMAINS = ['domains', 'trustdomains']
 MPC_MIN_VER = "1.6.4"
 MPC_BE_MIN_VER = "1.5.2.3123"
 VLC_MIN_VERSION = "2.2.1"

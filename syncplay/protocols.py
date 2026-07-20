@@ -217,6 +217,8 @@ class SyncClientProtocol(JSONCommandProtocol):
                 self._client.ui.showGenericOSD(values)
             elif command == "trackProposal":
                 self._client.ui.setTrackProposal(values)
+            elif command == "trustedDomains":
+                self._client.setServerTrustedDomains(values)
 
     def sendFeaturesUpdate(self, features):
         self.sendSet({"features": features})
@@ -226,6 +228,9 @@ class SyncClientProtocol(JSONCommandProtocol):
 
     def sendTrackProposal(self, payload):
         self.sendSet({"trackProposal": payload})
+
+    def sendTrustedDomains(self, payload):
+        self.sendSet({"trustedDomains": payload})
 
     def sendSet(self, setting):
         self.sendMessage({"Set": setting})
@@ -632,6 +637,8 @@ class SyncServerProtocol(JSONCommandProtocol):
                 self._factory.authAdmin(self._watcher, password)
             elif command == "trackProposal":
                 self._factory.setTrackProposal(self._watcher, set_[1])
+            elif command == "trustedDomains":
+                self._factory.setTrustedDomains(self._watcher, set_[1])
 
     def sendSet(self, setting):
         self.sendMessage({"Set": setting})

@@ -191,6 +191,8 @@ class ConsoleUI(threading.Thread):
             self._syncplayClient.toggleReady()
         elif command.group('command') in constants.COMMANDS_TRACKS:
             self._syncplayClient.requestTrackPublish()
+        elif command.group('command') in constants.COMMANDS_PUBLISH_DOMAINS:
+            self._syncplayClient.publishTrustedDomains()
         elif command.group('command') in constants.COMMANDS_QUEUE:
             filename = command.group('parameter')
             if filename is None:

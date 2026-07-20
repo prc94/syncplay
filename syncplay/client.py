@@ -121,6 +121,7 @@ class SyncplayClient(object):
         self._pauseWarningOSDSupported = getattr(playerClass, "pauseWarningOSDSupported", False)
         self._genericOSDSupported = getattr(playerClass, "genericOSDSupported", False)
         self._trackProposalsSupported = getattr(playerClass, "trackProposalsSupported", False)
+        self._serverTrustedDomains = []  # Session-only overlay of admin-published trusted domains
         self._config = config
 
         self._running = False
@@ -167,6 +168,7 @@ class SyncplayClient(object):
         if self._protocol:
             self._protocol.drop()
         self._protocol = None
+        self._serverTrustedDomains = []  # session-only: never carries across a disconnect
 
     def initPlayer(self, player):
         self._player = player
@@ -560,6 +562,46 @@ class SyncplayClient(object):
             # TODO: Properly add message for setting trusted domains!
             # TODO: Handle cases where users add www. to start of domain
 
+    def effectiveTrustedDomains(self):
+        # User's own trusted domains, plus any accepted server-published ones (session-only overlay).
+        # Order-preserving union so the user's list always wins first; opt-out disables the overlay.
+        domains = list(self._config['trustedDomains']) if self._config['trustedDomains'] else []
+        if self._config.get('receiveServerTrustedDomains', True) and self._serverTrustedDomains:
+            for entry in self._serverTrustedDomains:
+                if entry not in domains:
+                    domains.append(entry)
+        return domains
+
+    def publishTrustedDomains(self):
+        # Admin action: publish this client's own trusted-domains list to the room. The server
+        # enforces admin authorization; a non-admin gets a private error back as chat.
+        if self._protocol and self._protocol.logged:
+            domains = self._config['trustedDomains'] if self._config['trustedDomains'] else []
+            self._protocol.sendTrustedDomains({"domains": domains, "by": self.getUsername()})
+
+    def setServerTrustedDomains(self, values):
+        # Received Set:trustedDomains. Store session-only; merged in effectiveTrustedDomains() when
+        # the user has not opted out. The raw list is always kept so re-enabling the opt-in
+        # mid-session takes effect without a reconnect.
+        if not isinstance(values, dict):
+            return
+        rawDomains = values.get("domains")
+        if not isinstance(rawDomains, list):
+            return
+        domains = []
+        for entry in rawDomains:
+            if isinstance(entry, str) and entry.strip():
+                cleaned = entry.strip().lower()[:constants.TRUSTED_DOMAINS_MAX_LENGTH]
+                if cleaned not in domains:
+                    domains.append(cleaned)
+            if len(domains) >= constants.TRUSTED_DOMAINS_MAX_COUNT:
+                break
+        self._serverTrustedDomains = domains
+        if domains and self._config.get('receiveServerTrustedDomains', True):
+            self.fileSwitchFoundFiles()  # re-evaluate pending file-switch trust with the new domains
+            self.ui.showMessage(getMessage("server-trusted-domains-notification").format(
+                len(domains), values.get("by", "")))
+
     def setRoomList(self, newRoomList):
         newRoomList = sorted(newRoomList)
         from syncplay.ui.ConfigurationGetter import ConfigurationGetter
@@ -585,9 +627,10 @@ class SyncplayClient(object):
         if not self._config['onlySwitchToTrustedDomains']:
             # trust all trustable URIs in this case
             return trustable, True
-        # check for matching trusted domains
-        if self._config['trustedDomains']:
-            for entry in self._config['trustedDomains']:
+        # check for matching trusted domains (user's list plus any accepted server-published ones)
+        effectiveTrustedDomains = self.effectiveTrustedDomains()
+        if effectiveTrustedDomains:
+            for entry in effectiveTrustedDomains:
                 trustedDomain, _, path = entry.partition('/')
                 foundMatch = False
                 if o.hostname in (trustedDomain, "www." + trustedDomain):
@@ -688,6 +731,7 @@ class SyncplayClient(object):
         self._player.setFeatures(self.serverFeatures)
 
     def checkForFeatureSupport(self, featureList):
+        self._serverTrustedDomains = []  # drop stale domains when (re)connecting
         self.serverFeatures = {
             "featureList": utils.meetsMinVersion(self.serverVersion, constants.FEATURE_LIST_MIN_VERSION),
             "sharedPlaylists": utils.meetsMinVersion(self.serverVersion, constants.SHARED_PLAYLIST_MIN_VERSION),
@@ -776,6 +820,7 @@ class SyncplayClient(object):
         features["pauseWarning"] = self._pauseWarningOSDSupported  # Can render the blinking pause-warning OSD
         features["osdMessages"] = self._genericOSDSupported  # Can render generic styled/ASS OSD messages
         features["trackProposals"] = self._trackProposalsSupported  # Can apply admin track proposals
+        features["trustedDomains"] = True  # Can receive admin-published trusted domains (player-agnostic)
 
         return features
 
