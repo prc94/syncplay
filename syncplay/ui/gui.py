@@ -85,8 +85,10 @@ class UserlistItemDelegate(QtWidgets.QStyledItemDelegate):
             controlIconQPixmap = QtGui.QPixmap(resourcespath + "user_key.png")
             tickIconQPixmap = QtGui.QPixmap(resourcespath + "tick.png")
             crossIconQPixmap = QtGui.QPixmap(resourcespath + "cross.png")
+            afkIconQPixmap = QtGui.QPixmap(resourcespath + "clock_go.png")
             roomController = currentQAbstractItemModel.data(itemQModelIndex, Qt.UserRole + constants.USERITEM_CONTROLLER_ROLE)
             userReady = currentQAbstractItemModel.data(itemQModelIndex, Qt.UserRole + constants.USERITEM_READY_ROLE)
+            userAfk = currentQAbstractItemModel.data(itemQModelIndex, Qt.UserRole + constants.USERITEM_AFK_ROLE)
             isUserRow = indexQModelIndex.parent() != indexQModelIndex.parent().parent()
             bkgColor = self.view.palette().color(QtGui.QPalette.Base)
             if isUserRow and (isMacOS() or isLinux()):
@@ -99,7 +101,15 @@ class UserlistItemDelegate(QtWidgets.QStyledItemDelegate):
                     midY-8,
                     controlIconQPixmap.scaled(16, 16, Qt.KeepAspectRatio))
 
-            if userReady and not tickIconQPixmap.isNull():
+            if userAfk and not afkIconQPixmap.isNull():
+                # AFK replaces the tick/cross (the server forces AFK users to not-ready,
+                # so without this the row would just show a cross)
+                itemQPainter.drawPixmap(
+                    (optionQStyleOptionViewItem.rect.x()-10),
+                    midY - 8,
+                    afkIconQPixmap.scaled(16, 16, Qt.KeepAspectRatio))
+
+            elif userReady and not tickIconQPixmap.isNull():
                 itemQPainter.drawPixmap(
                     (optionQStyleOptionViewItem.rect.x()-10),
                     midY - 8,
@@ -526,6 +536,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def setFeatures(self, featureList):
         if not featureList["readiness"]:
             self.readyPushButton.setEnabled(False)
+        # .get, not [] - stock servers' featureList has no "afk" key
+        self.afkPushButton.setEnabled(bool(featureList.get("afk")))
         if not featureList["chat"]:
             self.chatFrame.setEnabled(False)
             self.chatInput.setReadOnly(True)
@@ -653,6 +665,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     isReadyWithFile = None
                 useritem.setData(isController, Qt.UserRole + constants.USERITEM_CONTROLLER_ROLE)
                 useritem.setData(isReadyWithFile, Qt.UserRole + constants.USERITEM_READY_ROLE)
+                useritem.setData(user.isAfk() if sameRoom else False, Qt.UserRole + constants.USERITEM_AFK_ROLE)
                 if user.file:
                     filesizeitem = QtGui.QStandardItem(formatSize(user.file['size']))
                     filedurationitem = QtGui.QStandardItem("({})".format(formatTime(user.file['duration'])))
@@ -699,6 +712,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 if currentUser.username == user.username:
                     font.setWeight(QtGui.QFont.Bold)
                     self.updateReadyState(currentUser.isReadyWithFile())
+                    self.updateAfkState(currentUser.isAfk())
                 if isControlledRoom and not isController:
                     useritem.setForeground(QtGui.QBrush(QtGui.QColor(constants.STYLE_NOTCONTROLLER_COLOR)))
                 useritem.setFont(font)
@@ -825,6 +839,12 @@ class MainWindow(QtWidgets.QMainWindow):
                 if path:
                     menu.addAction(QtGui.QPixmap(resourcespath + "folder_film.png"), getMessage('open-containing-folder'), lambda: utils.open_system_file_browser(path))
 
+        if isUserRow and username == self._syncplayClient.userlist.currentUser.username and self._syncplayClient.serverFeatures.get("afk"):
+            if self._syncplayClient.userlist.currentUser.isAfk():
+                menu.addAction(QtGui.QPixmap(resourcespath + "clock_go.png"), getMessage("not-afk-menu-label"), lambda: self._syncplayClient.toggleAfk())
+            else:
+                menu.addAction(QtGui.QPixmap(resourcespath + "clock_go.png"), getMessage("afk-menu-label"), lambda: self._syncplayClient.toggleAfk())
+
         if isUserRow and roomToJoin == self._syncplayClient.getRoom() and self._syncplayClient.userlist.currentUser.canControl() and self._syncplayClient.userlist.isReadinessSupported(requiresOtherUsers=False) and self._syncplayClient.serverFeatures["setOthersReadiness"]:
             if self._syncplayClient.userlist.isReady(username):
                 addSetUserAsReadyText = getMessage("setasnotready-menu-label").format(shortUsername)
@@ -870,6 +890,14 @@ class MainWindow(QtWidgets.QMainWindow):
             self.readyPushButton.setChecked(newState)
             self.readyPushButton.blockSignals(False)
         self.updateReadyIcon()
+
+    def updateAfkState(self, newState):
+        oldState = self.afkPushButton.isChecked()
+        if newState != oldState and newState is not None:
+            self.afkPushButton.blockSignals(True)
+            self.afkPushButton.setChecked(newState)
+            self.afkPushButton.blockSignals(False)
+        self.updateAfkIcon()
 
     @needsClient
     def playlistItemClicked(self, item):
@@ -1628,6 +1656,19 @@ class MainWindow(QtWidgets.QMainWindow):
         window.readyPushButton.setStyleSheet(constants.STYLE_READY_PUSHBUTTON)
         window.readyPushButton.setToolTip(getMessage("ready-tooltip"))
         window.listLayout.addWidget(window.readyPushButton, Qt.AlignRight)
+
+        window.afkPushButton = QtWidgets.QPushButton()
+        afkFont = QtGui.QFont()
+        afkFont.setWeight(QtGui.QFont.Bold)
+        window.afkPushButton.setText(getMessage("afk-guipushbuttonlabel"))
+        window.afkPushButton.setCheckable(True)
+        window.afkPushButton.setAutoExclusive(False)
+        window.afkPushButton.toggled.connect(self.changeAfkState)
+        window.afkPushButton.setFont(afkFont)
+        window.afkPushButton.setStyleSheet(constants.STYLE_READY_PUSHBUTTON)
+        window.afkPushButton.setToolTip(getMessage("afk-tooltip"))
+        window.afkPushButton.setEnabled(False)  # enabled by setFeatures on servers that support AFK
+        window.listLayout.addWidget(window.afkPushButton, Qt.AlignRight)
         if isMacOS(): window.listLayout.setContentsMargins(0, 0, 0, 10)
 
         window.autoplayLayout = QtWidgets.QHBoxLayout()
@@ -1882,6 +1923,13 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.showDebugMessage("Tried to change ready state too soon.")
 
+    def changeAfkState(self):
+        self.updateAfkIcon()
+        if self._syncplayClient:
+            self._syncplayClient.changeAfkState(self.afkPushButton.isChecked())
+        else:
+            self.showDebugMessage("Tried to change AFK state too soon.")
+
     def changePlaylistEnabledState(self):
         self._syncplayClient.changePlaylistEnabledState(self.playlistGroup.isChecked())
 
@@ -1911,6 +1959,13 @@ class MainWindow(QtWidgets.QMainWindow):
             self.readyPushButton.setIcon(QtGui.QPixmap(resourcespath + 'tick_checkbox.png'))
         else:
             self.readyPushButton.setIcon(QtGui.QPixmap(resourcespath + 'empty_checkbox.png'))
+
+    def updateAfkIcon(self):
+        afk = self.afkPushButton.isChecked()
+        if afk:
+            self.afkPushButton.setIcon(QtGui.QPixmap(resourcespath + 'clock_go.png'))
+        else:
+            self.afkPushButton.setIcon(QtGui.QPixmap(resourcespath + 'empty_checkbox.png'))
 
     def updateAutoPlayIcon(self):
         ready = self.autoplayPushButton.isChecked()

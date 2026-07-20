@@ -27,6 +27,7 @@ class FW:
     def getName(self): return self._name
     def isAdmin(self): return self._admin
     def setAdmin(self, v): self._admin = v
+    def isAfk(self): return False
     def getPosition(self): return self._pos
     def getFile(self): return {"name": "f.mkv"}
     def getRoom(self): return self._room

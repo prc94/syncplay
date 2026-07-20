@@ -73,6 +73,8 @@ class ConsoleUI(threading.Thread):
                     userflags += "({}) ".format(getMessage("controller-userlist-userflag"))
                 if user.isReady():
                     userflags += "({}) ".format(getMessage("ready-userlist-userflag"))
+                if user.isAfk():
+                    userflags += "({}) ".format(getMessage("afk-userlist-userflag"))
 
                 username = userflags + "*<{}>*".format(user.username) if user == currentUser else userflags + "<{}>".format(user.username)
                 if user.file:
@@ -189,6 +191,8 @@ class ConsoleUI(threading.Thread):
             self._syncplayClient.identifyAsController(controlpassword)
         elif command.group('command') in constants.COMMANDS_TOGGLE:
             self._syncplayClient.toggleReady()
+        elif command.group('command') in constants.COMMANDS_AFK:
+            self._syncplayClient.toggleAfk()
         elif command.group('command') in constants.COMMANDS_TRACKS:
             self._syncplayClient.requestTrackPublish()
         elif command.group('command') in constants.COMMANDS_PUBLISH_DOMAINS:
@@ -263,6 +267,7 @@ class ConsoleUI(threading.Thread):
             self.showMessage(getMessage("commandlist-notification/offset"), True)
             self.showMessage(getMessage("commandlist-notification/help"), True)
             self.showMessage(getMessage("commandlist-notification/toggle"), True)
+            self.showMessage(getMessage("commandlist-notification/afk"), True)
             self.showMessage(getMessage("commandlist-notification/create"), True)
             self.showMessage(getMessage("commandlist-notification/auth"), True)
             self.showMessage(getMessage("commandlist-notification/chat"), True)

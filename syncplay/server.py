@@ -106,6 +106,7 @@ class SyncFactory(Factory):
         features["maxFilenameLength"] = constants.MAX_FILENAME_LENGTH
         features["setOthersReadiness"] = True
         features["serverAdmin"] = self.adminPassword is not None
+        features["afk"] = True
 
         return features
 
@@ -138,6 +139,7 @@ class SyncFactory(Factory):
 
     def setWatcherRoom(self, watcher, roomName, asJoin=False):
         roomName = truncateText(roomName, constants.MAX_ROOM_NAME_LENGTH)
+        self.setAfk(watcher, False)  # switching rooms is activity; broadcast reaches the old room
         self._roomManager.moveWatcher(watcher, roomName)
         if asJoin:
             self.sendJoinMessage(watcher)
@@ -162,6 +164,7 @@ class SyncFactory(Factory):
         l = lambda w: w.sendSetting(watcher.getName(), watcher.getRoom(), None, None)
         self._roomManager.broadcast(watcher, l)
         self._roomManager.broadcastRoom(watcher, lambda w: w.sendSetReady(watcher.getName(), watcher.isReady(), False))
+        self._broadcastAfkToRoom(watcher)
         if self.roomsDbFile:
             l = lambda w: w.sendList(toGUIOnly=True)
             self._roomManager.broadcast(watcher, l)
@@ -189,6 +192,7 @@ class SyncFactory(Factory):
         l = lambda w: w.sendSetting(watcher.getName(), watcher.getRoom(), None, {"joined": True, "version": watcher.getVersion(), "features": watcher.getFeatures()}) if w != watcher else None
         self._roomManager.broadcast(watcher, l)
         self._roomManager.broadcastRoom(watcher, lambda w: w.sendSetReady(watcher.getName(), watcher.isReady(), False))
+        self._broadcastAfkToRoom(watcher)
         if self.roomsDbFile:
             l = lambda w: w.sendList(toGUIOnly=True)
             self._roomManager.broadcast(watcher, l)
@@ -251,6 +255,11 @@ class SyncFactory(Factory):
             if command == constants.UNLOCK_COMMAND:
                 self._handleLockChatCommand(watcher, locked=False)
                 return
+            if command == constants.AFK_COMMAND:
+                # Reaches the server only from stock clients (modded clients intercept /afk
+                # locally and toggle via Set:afk) - toggle for them so anyone can use it.
+                self.setAfk(watcher, not watcher.isAfk())
+                return
             if command == constants.PUBLISH_DOMAINS_COMMAND:
                 # Only reaches the server from legacy clients (updated clients publish via Set).
                 watcher.sendChatMessage({"message": getMessage("domains-command-notice-chat-message"),
@@ -262,6 +271,7 @@ class SyncFactory(Factory):
                 watcher.sendChatMessage({"message": getMessage("tracks-command-notice-chat-message"),
                                          "username": watcher.getName()})
                 return
+        self.setAfk(watcher, False)  # chatting is activity
         message = truncateText(message, self.maxChatMessageLength)
         messageDict = {"message": message, "username": watcher.getName()}
         self._roomManager.broadcastRoom(watcher, lambda w: w.sendChatMessage(messageDict))
@@ -614,9 +624,39 @@ class SyncFactory(Factory):
             room._pauseWarningTimer = None
 
     def _broadcastPauseWarningChat(self, room):
+        if room.hasAfkWatcher():
+            return  # the room is knowingly waiting for someone - warning resumes once they return
         messageDict = {"message": self.pauseWarningText(room), "username": room.yapPausedByName() or ""}
         for receiver in room.getWatchers():
             receiver.sendChatMessage(messageDict, skipIfSupportsFeature="pauseWarning")
+
+    def setAfk(self, watcher, isAfk):
+        # AFK is per-connection like admin status. Going AFK also forces not-ready (directly, not
+        # via setReady - its manual-change hook would instantly clear the AFK state again);
+        # returning does not auto-restore ready.
+        isAfk = bool(isAfk)
+        if watcher.isAfk() == isAfk:
+            return
+        watcher.setAfk(isAfk)
+        room = watcher.getRoom()
+        if room is None:
+            return
+        messageKey = "afk-on-chat-message" if isAfk else "afk-off-chat-message"
+        messageDict = {"message": getMessage(messageKey), "username": watcher.getName()}
+        for receiver in room.getWatchers():
+            if receiver.supportsFeature("afk"):
+                receiver.sendSetAfk(watcher.getName(), isAfk)
+            else:
+                receiver.sendChatMessage(messageDict)
+        if isAfk and not self.disableReady and watcher.isReady() is not False:
+            watcher.setReady(False)
+            self._roomManager.broadcastRoom(watcher, lambda w: w.sendSetReady(watcher.getName(), False, False))
+
+    def _broadcastAfkToRoom(self, watcher):
+        # Join/room-switch resync (mirrors the sendSetReady rebroadcast): fixes stale AFK views
+        # held by destination-room members from an earlier shared-room stint.
+        self._roomManager.broadcastRoom(
+            watcher, lambda w: w.sendSetAfk(watcher.getName(), watcher.isAfk()) if w.supportsFeature("afk") else None)
 
     def setReady(self, watcher, isReady, manuallyInitiated=True, username=None):
         if username and username != watcher.getName():
@@ -631,7 +671,11 @@ class SyncFactory(Factory):
                         else:
                             messageDict = {"message": getMessage("not-ready-chat-message").format(username), "username": watcher.getName()}
                         self._roomManager.broadcastRoom(watcher, lambda w: w.sendChatMessage(messageDict, "setOthersReadiness"))
+                        if isReady:
+                            self.setAfk(watcherToSet, False)  # "ready but AFK" would contradict itself
         else:
+            if manuallyInitiated and bool(isReady) != bool(watcher.isReady()):
+                self.setAfk(watcher, False)  # deliberately changing readiness is activity
             watcher.setReady(isReady)
             self._roomManager.broadcastRoom(watcher, lambda w: w.sendSetReady(watcher.getName(), watcher.isReady(), manuallyInitiated))
 
@@ -1106,6 +1150,10 @@ class Room(object):
     def getWatchers(self):
         return list(self._watchers.values())
 
+    def hasAfkWatcher(self):
+        # Computed over live watchers so disconnects/room switches self-heal - no cleanup needed.
+        return any(w.isAfk() for w in self.getWatchers())
+
     def addWatcher(self, watcher):
         if self._watchers or self.isPersistent():
             watcher.setPosition(self.getPosition())
@@ -1231,6 +1279,7 @@ class Watcher(object):
         self._connector = connector
         self._name = name
         self._isAdmin = False
+        self._isAfk = False
         self._lastTrackProposalAnnouncedFile = None
         self._room = None
         self._file = None
@@ -1338,6 +1387,9 @@ class Watcher(object):
     def sendSetReady(self, username, isReady, manuallyInitiated=True, setByUsername=None):
         self._connector.sendSetReady(username, isReady, manuallyInitiated, setByUsername)
 
+    def sendSetAfk(self, username, isAfk):
+        self._connector.sendSetAfk(username, isAfk)
+
     def setPlaylistIndex(self, username, index):
         self._connector.setPlaylistIndex(username, index)
 
@@ -1388,6 +1440,11 @@ class Watcher(object):
     def updateState(self, position, paused, doSeek, messageAge):
         pauseChanged = self.__hasPauseChanged(paused)
         self._lastUpdatedOn = time.time()
+        if (pauseChanged or doSeek) and self._isAfk:
+            # Deliberate playback input is activity - even a non-controller's attempt that is
+            # about to be reverted. Echoes of server-forced changes never reach here
+            # (ignoring-on-the-fly gate + __hasPauseChanged compares against room state).
+            self._server.setAfk(self, False)
         if pauseChanged:
             self.getRoom().setPaused(Room.STATE_PAUSED if paused else Room.STATE_PLAYING, self)
             if self.getRoom().canControl(self):
@@ -1404,6 +1461,12 @@ class Watcher(object):
 
     def setAdmin(self, isAdmin):
         self._isAdmin = isAdmin
+
+    def isAfk(self):
+        return self._isAfk
+
+    def setAfk(self, isAfk):
+        self._isAfk = isAfk
 
     def isController(self):
         if self._isAdmin:

@@ -28,6 +28,7 @@ class FW:
         self._room = None
     def getName(self): return self._name
     def isAdmin(self): return self._admin
+    def isAfk(self): return False
     def getRoom(self): return self._room
     def supportsFeature(self, ft): return self._features.get(ft, False)
     def sendChatMessage(self, m, skipIfSupportsFeature=None):

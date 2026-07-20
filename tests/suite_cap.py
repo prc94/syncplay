@@ -71,6 +71,7 @@ f.pauseWarningAfter = 300; f.pauseWarningInterval = 300; f.pauseWarningMessage =
 class FakeWatcher:
     def __init__(self): self.chats = []
     def getName(self): return "w"
+    def isAfk(self): return False
     def supportsFeature(self, ft): return False
     def sendChatMessage(self, m, skipIfSupportsFeature=None): self.chats.append(m["message"])
 

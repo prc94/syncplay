@@ -53,6 +53,7 @@ class FakeWatcher:
         self._name, self._version, self._features = name, version, features
         self.chats, self.osds = [], []
     def getName(self): return self._name
+    def isAfk(self): return False
     def supportsFeature(self, ft): return self._features.get(ft, False)
     def sendChatMessage(self, m, skipIfSupportsFeature=None):
         if meetsMinVersion(self._version, constants.CHAT_MIN_VERSION):

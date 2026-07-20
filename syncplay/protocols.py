@@ -219,6 +219,8 @@ class SyncClientProtocol(JSONCommandProtocol):
                 self._client.ui.setTrackProposal(values)
             elif command == "trustedDomains":
                 self._client.setServerTrustedDomains(values)
+            elif command == "afk":
+                self._client.setAfk(values.get("username"), bool(values.get("isAfk")))
 
     def sendFeaturesUpdate(self, features):
         self.sendSet({"features": features})
@@ -260,8 +262,9 @@ class SyncClientProtocol(JSONCommandProtocol):
                 file_ = user[1]['file'] if user[1]['file'] != {} else None
                 isController = user[1]['controller'] if 'controller' in user[1] else False
                 isReady = user[1]['isReady'] if 'isReady' in user[1] else None
+                isAfk = user[1]['isAfk'] if 'isAfk' in user[1] else False
                 features = user[1]['features'] if 'features' in user[1] else None
-                self._client.userlist.addUser(userName, roomName, file_, noMessage=True, isController=isController, isReady=isReady, features=features)
+                self._client.userlist.addUser(userName, roomName, file_, noMessage=True, isController=isController, isReady=isReady, features=features, isAfk=isAfk)
         self._client.userlist.showUserList()
 
     def sendList(self):
@@ -366,6 +369,9 @@ class SyncClientProtocol(JSONCommandProtocol):
                     "manuallyInitiated": manuallyInitiated
                 }
             })
+
+    def setAfk(self, isAfk):
+        self.sendSet({"afk": {"isAfk": isAfk}})
 
     def setPlaylist(self, files):
         self.sendSet({
@@ -639,6 +645,9 @@ class SyncServerProtocol(JSONCommandProtocol):
                 self._factory.setTrackProposal(self._watcher, set_[1])
             elif command == "trustedDomains":
                 self._factory.setTrustedDomains(self._watcher, set_[1])
+            elif command == "afk":
+                isAfk = set_[1].get("isAfk") if isinstance(set_[1], dict) else None
+                self._factory.setAfk(self._watcher, bool(isAfk))
 
     def sendSet(self, setting):
         self.sendMessage({"Set": setting})
@@ -679,6 +688,9 @@ class SyncServerProtocol(JSONCommandProtocol):
                 }
             })
 
+    def sendSetAfk(self, username, isAfk):
+        self.sendSet({"afk": {"username": username, "isAfk": isAfk}})
+
     def setPlaylist(self, username, files):
         self.sendSet({
             "playlistChange": {
@@ -715,6 +727,7 @@ class SyncServerProtocol(JSONCommandProtocol):
                 "file": watcher.getFile() if watcher.getFile() else {},
                 "controller": watcher.isController(),
                 "isReady": watcher.isReady(),
+                "isAfk": watcher.isAfk(),
                 "features": watcher.getFeatures()
             }
             userlist[room.getName()][watcher.getName()] = userFile
@@ -780,7 +793,8 @@ class SyncServerProtocol(JSONCommandProtocol):
                 "total": room.yapTotal(),
             }
         if self._factory.pauseWarningAfter and room and room._pauseWarningActive \
-                and not yapExpired and self._watcher.supportsFeature("pauseWarning"):
+                and not yapExpired and not room.hasAfkWatcher() \
+                and self._watcher.supportsFeature("pauseWarning"):
             state["pauseWarning"] = {"message": self._factory.pauseWarningText(room)}
         if forced:
             self.serverIgnoringOnTheFly += 1

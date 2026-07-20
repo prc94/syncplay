@@ -84,6 +84,7 @@ YAP_TIMER_MAX_PAUSE = 3600  # Secs - after a single pause lasts this long, the y
 ADMIN_COMMAND = "/admin"  # /admin <password> - authenticate as server admin
 LOCK_COMMAND = "/lock"  # Admin: lock the current plain room (only admins control playback)
 UNLOCK_COMMAND = "/unlock"  # Admin: unlock the current room
+AFK_COMMAND = "/afk"  # Toggle AFK state (stock clients; modded clients intercept /afk locally)
 
 # Admin-published trusted domains
 PUBLISH_DOMAINS_COMMAND = "/domains"  # Publish this client's trusted domains to the room (admin)
@@ -176,6 +177,7 @@ COMMANDS_NEXT = ["next", "qn"]
 COMMANDS_SETREADY = ['setready', 'sr']
 COMMANDS_SETNOTREADY = ['setready', 'snr']
 COMMANDS_TRACKS = ['tracks']
+COMMANDS_AFK = ['afk']
 COMMANDS_PUBLISH_DOMAINS = ['domains', 'trustdomains']
 MPC_MIN_VER = "1.6.4"
 MPC_BE_MIN_VER = "1.5.2.3123"
@@ -383,6 +385,7 @@ CONFIG_NAME_MARKER = ":"
 CONFIG_VALUE_MARKER = "="
 USERITEM_CONTROLLER_ROLE = 0
 USERITEM_READY_ROLE = 1
+USERITEM_AFK_ROLE = 2
 FILEITEM_SWITCH_ROLE = 1
 FILEITEM_SWITCH_NO_SWITCH = 0
 FILEITEM_SWITCH_FILE_SWITCH = 1

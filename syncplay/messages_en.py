@@ -59,6 +59,10 @@ en = {
     "ready-to-unpause-notification": "You are now set as ready - unpause again to unpause",
     "set-as-ready-notification": "You are now set as ready",
     "set-as-not-ready-notification": "You are now set as not ready",
+    "set-as-afk-notification": "You are now AFK (not counted as ready)",
+    "set-as-not-afk-notification": "You are no longer AFK",
+    "other-afk-notification": "{} is now AFK",  # User
+    "other-not-afk-notification": "{} is no longer AFK",  # User
     "autoplaying-notification": "Auto-playing in {}...",  # Number of seconds until playback will start
 
     "identifying-as-controller-notification": "Identifying as room operator with password '{}'...",
@@ -86,6 +90,7 @@ en = {
     "userlist-file-notification": "File",
     "controller-userlist-userflag": "Operator",
     "ready-userlist-userflag": "Ready",
+    "afk-userlist-userflag": "AFK",
 
     "update-check-failed-notification": "Could not automatically check whether Syncplay {} is up to date. Want to visit https://syncplay.pl/ to manually check for updates?",  # Syncplay version
     "syncplay-uptodate-notification": "Syncplay is up to date",
@@ -105,6 +110,7 @@ en = {
     "commandlist-notification/offset": "\to[+-]duration - offset local playback by the given duration (in seconds or min:sec) from the server seek position - this is a deprecated feature",
     "commandlist-notification/help": "\th - this help",
     "commandlist-notification/toggle": "\tt - toggles whether you are ready to watch or not",
+    "commandlist-notification/afk": "\tafk - toggles your AFK status (pauses the pause-length warning, sets you as not ready)",
     "commandlist-notification/setready": "\tsr [name] - sets user as ready",
     "commandlist-notification/setnotready": "\tsn [name] - sets user as not ready",
     "commandlist-notification/create": "\tc [name] - create managed room using name of current room",
@@ -169,6 +175,7 @@ en = {
     "feature-readiness": "readiness",  # used for not-supported-by-server-error
     "feature-managedRooms": "managed rooms",  # used for not-supported-by-server-error
     "feature-setOthersReadiness": "readiness override",  # used for not-supported-by-server-error
+    "feature-afk": "AFK status",  # used for not-supported-by-server-error
 
     "not-supported-by-server-error": "The {} feature is not supported by this server..",  # feature
     "shared-playlists-not-supported-by-server-error": "The shared playlists feature may not be supported by the server. To ensure that it works correctly requires a server running Syncplay  {}+, but the server is running Syncplay {}.",  # minVersion, serverVersion
@@ -479,6 +486,10 @@ en = {
     "joinroom-tooltip": "Leave current room and joins specified room.",
     "seektime-msgbox-label": "Jump to specified time (in seconds / min:sec). Use +/- for relative seek.",
     "ready-tooltip": "Indicates whether you are ready to watch.",
+    "afk-tooltip": "Marks you as AFK: you are set as not ready and the room's pause-length warning stays quiet until you return.",
+    "afk-guipushbuttonlabel": "AFK",
+    "afk-menu-label": "Set yourself as AFK",
+    "not-afk-menu-label": "Set yourself as no longer AFK",
     "autoplay-tooltip": "Auto-play when all users who have readiness indicator are ready and minimum user threshold met.",
     "switch-to-file-tooltip": "Double click to switch to {}",  # Filename
     "sendmessage-tooltip": "Send message to room",
@@ -494,6 +505,8 @@ en = {
     "persistent-rooms-notice": "NOTICE: This server uses persistent rooms, which means that the playlist information is stored between playback sessions. If you want to create a room where information is not saved then put -temp at the end of the room name.", # NOTE: Do not translate the word -temp
     "ready-chat-message": "I have set {} as ready.", # User
     "not-ready-chat-message": "I have set {} as not ready.", # User
+    "afk-on-chat-message": "is now AFK - the pause-length warning is paused for this room", # Prefixed with <username>
+    "afk-off-chat-message": "is no longer AFK", # Prefixed with <username>
     "yap-timer-paused-chat-message": "paused - yap timer running", # Prefixed with <username> who paused
     "yap-timer-ongoing-chat-message": "still paused - {} this pause ({} total)", # Current pause duration, total pause time for file
     "yap-timer-unpaused-chat-message": "unpaused - yapped for {} ({} total this file)", # This pause duration, total pause time for file

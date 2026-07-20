@@ -126,6 +126,59 @@ or more will never fire.
 
 ---
 
+## AFK state
+
+A third per-user state alongside *ready* and *not ready*. Marking yourself
+**AFK** ("away from keyboard") tells the room you have stepped away. While
+**anyone** in a room is AFK:
+
+* The room's **pause warning is suppressed** — no blinking OSD, no chat
+  reminders. The warning is only *silenced*, not disarmed: it resumes
+  automatically (within about a second) once the last AFK person returns or
+  leaves the room, if the pause is still over the threshold.
+* The **yap timer keeps counting** exactly as normal — the pause is still time
+  the room spent paused, so it is still measured and displayed.
+
+An AFK user is also shown as **not ready** (so autoplay and "everyone ready"
+correctly wait for them), marked with a clock icon in the user list, and
+announced to the room ("*name* is now AFK").
+
+### Toggling AFK
+
+Any of these toggle your own AFK state:
+
+* Type **`/afk`** in the chat box, the mpv chat overlay, or the console client.
+* Click the **AFK** button next to the *Ready* button (GUI), or use the
+  **right-click menu** on your own name in the user list.
+
+There is no server flag — AFK is always available (it needs a server that
+advertises the `afk` feature; see compatibility below).
+
+### Automatic clear
+
+AFK is meant to be transient, so it clears itself the moment you show activity:
+
+* unpausing or seeking,
+* changing your ready state,
+* sending a chat message,
+* switching rooms.
+
+Returning from AFK does **not** restore your previous ready state — you re-ready
+yourself when you are actually back.
+
+### Compatibility
+
+* On a **modded server**, updated clients get the full experience (icon,
+  button, live suppression). **Stock/older clients** in the same room still see
+  the AFK user as *not ready* and receive a plain chat line ("*name* is now
+  AFK"); they can even toggle their own AFK by typing `/afk` (the server
+  understands the command). Nobody is required to update.
+* On a **stock server** (no `afk` feature), the AFK button is disabled and
+  `/afk` reports that the server does not support it — nothing is sent, so
+  there is no risk to interoperability.
+
+---
+
 ## OSD messages (`/osd`)
 
 A generic channel for putting **styled announcements** on everyone's screen.

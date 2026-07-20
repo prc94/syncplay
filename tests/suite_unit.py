@@ -152,6 +152,7 @@ class FakeWatcher:
         self._name, self._version, self._features = name, version, features
         self.chats = []
     def getName(self): return self._name
+    def isAfk(self): return False
     def supportsFeature(self, ft): return self._features.get(ft, False)
     def sendChatMessage(self, message, skipIfSupportsFeature=None):
         # replicates server.Watcher.sendChatMessage gating exactly

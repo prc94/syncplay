@@ -26,6 +26,7 @@ class FW:
         self._lastTrackProposalAnnouncedFile = None
     def getName(self): return self._name
     def isAdmin(self): return self._admin
+    def isAfk(self): return False
     def getRoom(self): return self._room
     def getFile(self): return getattr(self, "file", {"name": "ep1.mkv"})
     def supportsFeature(self, ft): return self._features.get(ft, False)

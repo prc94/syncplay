@@ -743,7 +743,8 @@ class SyncplayClient(object):
             "maxUsernameLength": constants.FALLBACK_MAX_USERNAME_LENGTH,
             "maxRoomNameLength": constants.FALLBACK_MAX_ROOM_NAME_LENGTH,
             "maxFilenameLength": constants.FALLBACK_MAX_FILENAME_LENGTH,
-            "setOthersReadiness": utils.meetsMinVersion(self.serverVersion, constants.SET_OTHERS_READINESS_MIN_VERSION)
+            "setOthersReadiness": utils.meetsMinVersion(self.serverVersion, constants.SET_OTHERS_READINESS_MIN_VERSION),
+            "afk": False  # fork feature; overwritten by the server's featureList when supported
         }
         if featureList:
             self.serverFeatures.update(featureList)
@@ -821,6 +822,7 @@ class SyncplayClient(object):
         features["osdMessages"] = self._genericOSDSupported  # Can render generic styled/ASS OSD messages
         features["trackProposals"] = self._trackProposalsSupported  # Can apply admin track proposals
         features["trustedDomains"] = True  # Can receive admin-published trusted domains (player-agnostic)
+        features["afk"] = True  # Understands the AFK state channel (player-agnostic)
 
         return features
 
@@ -1150,6 +1152,26 @@ class SyncplayClient(object):
         self.ui.updateAutoPlayState(False)
         self.stopAutoplayCountdown()
 
+    @requireServerFeature("afk")
+    def toggleAfk(self):
+        # No optimistic local state - the server echoes the change back via Set:afk.
+        self._protocol.setAfk(not self.userlist.currentUser.isAfk())
+
+    @requireServerFeature("afk")
+    def changeAfkState(self, newState):
+        if bool(newState) != self.userlist.currentUser.isAfk():
+            self.toggleAfk()
+
+    def setAfk(self, username, isAfk):
+        oldAfkState = self.userlist.isAfk(username)
+        self.userlist.setAfk(username, isAfk)
+        self.ui.userListChange()
+        if oldAfkState != isAfk:
+            if username == self.userlist.currentUser.username:
+                self.ui.showMessage(getMessage("set-as-afk-notification" if isAfk else "set-as-not-afk-notification"))
+            elif self.userlist.isRoomSame(self.userlist.getUserRoom(username)):
+                self.ui.showMessage(getMessage("other-afk-notification" if isAfk else "other-not-afk-notification").format(username))
+
     @requireServerFeature("readiness")
     def toggleReady(self, manuallyInitiated=True):
         self._protocol.setReady(not self.userlist.currentUser.isReady(), manuallyInitiated)
@@ -1385,6 +1407,7 @@ class SyncplayClient(object):
 class SyncplayUser(object):
     def __init__(self, username=None, room=None, file_=None):
         self.ready = None
+        self.afk = False
         self.username = username
         self.room = room
         self.file = file_
@@ -1442,6 +1465,12 @@ class SyncplayUser(object):
 
     def setReady(self, ready):
         self.ready = ready
+
+    def isAfk(self):
+        return self.afk
+
+    def setAfk(self, afk):
+        self.afk = afk
 
     def setFeatures(self, features):
         self._features = features
@@ -1525,17 +1554,19 @@ class SyncplayUserlist(object):
         if differentDuration: differences.append(getMessage("file-difference-duration"))
         return ", ".join(differences)
 
-    def addUser(self, username, room, file_, noMessage=False, isController=None, isReady=None, features={}):
+    def addUser(self, username, room, file_, noMessage=False, isController=None, isReady=None, features={}, isAfk=False):
         if username == self.currentUser.username:
             if isController is not None:
                 self.currentUser.setControllerStatus(isController)
             self.currentUser.setReady(isReady)
+            self.currentUser.setAfk(isAfk)
             return
         user = SyncplayUser(username, room, file_)
         if isController is not None:
             user.setControllerStatus(isController)
         self._users[username] = user
         user.setReady(isReady)
+        user.setAfk(isAfk)
         user.setFeatures(features)
         if not noMessage:
             self.__showUserChangeMessage(username, room, file_)
@@ -1716,6 +1747,28 @@ class SyncplayUserlist(object):
         elif username in self._users:
             self._users[username].setReady(isReady)
         self._client.autoplayCheck()
+
+    def isAfk(self, username):
+        if self.currentUser.username == username:
+            return self.currentUser.isAfk()
+        for user in self._users.values():
+            if user.username == username:
+                return user.isAfk()
+        return False
+
+    def getUserRoom(self, username):
+        if self.currentUser.username == username:
+            return self.currentUser.room
+        for user in self._users.values():
+            if user.username == username:
+                return user.room
+        return None
+
+    def setAfk(self, username, isAfk):
+        if self.currentUser.username == username:
+            self.currentUser.setAfk(isAfk)
+        elif username in self._users:
+            self._users[username].setAfk(isAfk)
 
     def userListChange(self, room=None):
         if room is not None and self.isRoomSame(room):
