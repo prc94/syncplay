@@ -67,6 +67,10 @@ check("domains keybind + handler registered",
       'mp.add_key_binding("Ctrl+d", "syncplay_publish_domains", publish_domains)' in src
       and "mp.register_script_message('publish-domains'" in src
       and "<SyncplayPublishDomains>" in src)
+check("AFK keybind + handler registered",
+      'mp.add_key_binding("Ctrl+a", "syncplay_toggle_afk", toggle_afk)' in src
+      and "mp.register_script_message('toggle-afk'" in src
+      and "<SyncplayToggleAfk>" in src)
 kb = re.search(r"function apply_tracks_keybind\(.*?\nend\n", src, re.S).group(0)
 check("keybind explains none/idle/mismatch", all(s in kb for s in ('"none"', '"idle"', '"mismatch"')))
 check("apply returns status strings", all('return "%s"' % s in tp_apply for s in ("none", "idle", "mismatch", "applied")) or

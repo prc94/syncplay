@@ -227,10 +227,12 @@ uroom = Room("u", None); uroom.addWatcher(uw)
 if uw._sendStateTimer and uw._sendStateTimer.running: uw._sendStateTimer.stop()
 uroom.setPaused(Room.STATE_PLAYING, uw)  # room now playing
 uw.setAfk(True)
-uw.updateState(5.0, True, False, 0)  # report pause -> pauseChanged
-check("updateState pause change clears AFK", uw.isAfk() is False)
+uw.updateState(5.0, True, False, 0)  # report pause -> pauseChanged, but pausing is not "returning"
+check("updateState pausing does NOT clear AFK (stepping away)", uw.isAfk() is True)
+uw.updateState(5.0, False, False, 0)  # report unpause -> returning activity
+check("updateState unpausing clears AFK", uw.isAfk() is False)
 uw.setAfk(True)
-uw.updateState(5.0, True, True, 0)   # doSeek while already paused
+uw.updateState(5.0, False, True, 0)   # doSeek
 check("updateState seek clears AFK", uw.isAfk() is False)
 
 # (e) controller readies an AFK target -> target's AFK cleared
@@ -267,8 +269,30 @@ routed.clear()
 sp2.handleSet({"afk": "garbage"})
 check("server handleSet afk malformed: safe False", routed == [("hs", False)], repr(routed))
 
+# ---------- player keybind: toggleAfkWithPause pauses on the way out ----------
+from syncplay.client import SyncplayClient, SyncplayUser, SyncplayUserlist
+
+def run_afk_keybind(currentlyAfk, playerPaused):
+    c = SyncplayClient.__new__(SyncplayClient)
+    c.serverVersion = "1.7.6"
+    c.serverFeatures = {"afk": True}
+    cu = SyncplayUser("me", "d"); cu.setAfk(currentlyAfk)
+    c.userlist = types.SimpleNamespace(currentUser=cu)
+    rec = []
+    c.setPaused = lambda v: rec.append(("pause", v))
+    c.toggleAfk = lambda: rec.append(("toggle",))
+    c.getPlayerPaused = lambda: playerPaused
+    c.toggleAfkWithPause()
+    return rec
+
+check("keybind: playing + not-AFK -> pause then set AFK",
+      run_afk_keybind(False, False) == [("pause", True), ("toggle",)], repr(run_afk_keybind(False, False)))
+check("keybind: already paused + not-AFK -> just set AFK",
+      run_afk_keybind(False, True) == [("toggle",)], repr(run_afk_keybind(False, True)))
+check("keybind: already AFK -> just toggle off, never pauses",
+      run_afk_keybind(True, False) == [("toggle",)], repr(run_afk_keybind(True, False)))
+
 # ---------- client-side userlist + user model ----------
-from syncplay.client import SyncplayUser, SyncplayUserlist
 u = SyncplayUser("bob", "d")
 check("SyncplayUser defaults not AFK", u.isAfk() is False)
 u.setAfk(True)

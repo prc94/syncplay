@@ -1447,9 +1447,11 @@ class Watcher(object):
     def updateState(self, position, paused, doSeek, messageAge):
         pauseChanged = self.__hasPauseChanged(paused)
         self._lastUpdatedOn = time.time()
-        if (pauseChanged or doSeek) and self._isAfk:
-            # Deliberate playback input is activity - even a non-controller's attempt that is
-            # about to be reverted. Echoes of server-forced changes never reach here
+        if ((pauseChanged and not paused) or doSeek) and self._isAfk:
+            # Returning to active watching clears AFK: unpausing or seeking - even a
+            # non-controller's attempt that is about to be reverted. Pausing does NOT
+            # clear it (stepping away is the whole point, and the AFK keybind pauses on
+            # the way out). Echoes of server-forced changes never reach here
             # (ignoring-on-the-fly gate + __hasPauseChanged compares against room state).
             self._server.setAfk(self, False)
         if pauseChanged:

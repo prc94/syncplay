@@ -488,6 +488,9 @@ class MpvPlayer(BasePlayer):
         if "<SyncplayPublishDomains>" in line:
             self.reactor.callFromThread(self._client.publishTrustedDomains)
 
+        if "<SyncplayToggleAfk>" in line:
+            self.reactor.callFromThread(self._client.toggleAfkWithPause)
+
         if "<SyncplayTrackProposal>" in line:
             try:
                 payload = json.loads(line.split("<SyncplayTrackProposal>")[1].split("</SyncplayTrackProposal>")[0])

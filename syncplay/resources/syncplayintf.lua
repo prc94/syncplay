@@ -662,6 +662,13 @@ end
 mp.add_key_binding("Ctrl+d", "syncplay_publish_domains", publish_domains)
 mp.register_script_message('publish-domains', publish_domains)
 
+-- Toggle your AFK state; going AFK pauses the room first (client-side decision).
+function toggle_afk()
+    mp.commandv('print-text', '<SyncplayToggleAfk>')
+end
+mp.add_key_binding("Ctrl+a", "syncplay_toggle_afk", toggle_afk)
+mp.register_script_message('toggle-afk', toggle_afk)
+
 mp.register_event("file-loaded", function()
     apply_track_proposal(true)  -- catch-up for late file switches + same-layout next episodes
 end)

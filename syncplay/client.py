@@ -1158,6 +1158,16 @@ class SyncplayClient(object):
         self._protocol.setAfk(not self.userlist.currentUser.isAfk())
 
     @requireServerFeature("afk")
+    def toggleAfkWithPause(self):
+        # Player-keybind entry point: going AFK pauses the room first (unless it is
+        # already paused), then marks you AFK. The server no longer treats a pause as
+        # "returned" activity, so the later pause echo won't clear the AFK we just set.
+        # Toggling back off just clears AFK - it leaves the pause state alone.
+        if not self.userlist.currentUser.isAfk() and not self.getPlayerPaused():
+            self.setPaused(True)
+        self.toggleAfk()
+
+    @requireServerFeature("afk")
     def changeAfkState(self, newState):
         if bool(newState) != self.userlist.currentUser.isAfk():
             self.toggleAfk()

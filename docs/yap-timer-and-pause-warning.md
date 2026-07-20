@@ -150,6 +150,11 @@ at a glance who has stepped away as long as the readiness warning is on screen.
 
 Any of these toggle your own AFK state:
 
+* Press **`Ctrl+A`** in mpv. Going AFK this way **pauses the room first** (so you
+  don't leave it playing to an empty seat) and then marks you AFK; if the room is
+  already paused it just marks you AFK. Pressing it again clears AFK (and leaves
+  the pause state as-is). The binding is a normal mpv key binding, so you can
+  remap it in your `input.conf` with `script-binding syncplay_toggle_afk`.
 * Type **`/afk`** in the chat box, the mpv chat overlay, or the console client.
 * Click the **AFK** button next to the *Ready* button (GUI), or use the
   **right-click menu** on your own name in the user list.
@@ -161,7 +166,7 @@ advertises the `afk` feature; see compatibility below).
 
 AFK is meant to be transient, so it clears itself the moment you show activity:
 
-* unpausing or seeking,
+* unpausing or seeking (but **not** pausing — stepping away often means pausing),
 * changing your ready state,
 * sending a chat message,
 * switching rooms.
