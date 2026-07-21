@@ -93,9 +93,19 @@ Syncplay only auto-switches the room to a streamed **URL** when its domain is in
 trusted-domains list **from their own client** so the room can follow along to the operator's
 streaming host.
 
-**Publishing** (admin, any updated client): press **Ctrl+D** in mpv (rebindable via the
-`syncplay_publish_domains` script binding) or type **`/domains`** into the Syncplay chat. This posts
-*your client's* current trusted-domains list to the room; the server confirms privately.
+**Publishing** (an admin or a room controller, any updated client): press **Ctrl+D** in mpv
+(rebindable via the `syncplay_publish_domains` script binding) or type **`/domains`** into the
+Syncplay chat. This posts *your client's* current trusted-domains list to the room; the server
+confirms privately. Room controllers are treated the same as admins here — an admin is simply a
+controller in every room.
+
+**Auto-sharing on edit (GUI):** the *Set trusted domains* dialog (File → Advanced → Set trusted
+domains) has a **"Share these trusted domains with everyone in the room"** checkbox, enabled only when
+you have admin or controller authority. Ticking it publishes the list immediately on OK and
+re-publishes automatically whenever you change your list for the rest of the session (this also
+covers the *"Add … as trusted domain"* context-menu action). The preference is **session-only** — it
+resets to off on the next launch. Newly joining users still receive the last-published list
+automatically, so there is no separate "share with new users" toggle.
 
 **What others get:**
 

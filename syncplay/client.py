@@ -127,6 +127,7 @@ class SyncplayClient(object):
         self._genericOSDSupported = getattr(playerClass, "genericOSDSupported", False)
         self._trackProposalsSupported = getattr(playerClass, "trackProposalsSupported", False)
         self._serverTrustedDomains = []  # Session-only overlay of admin-published trusted domains
+        self._shareTrustedDomainsOnUpdate = False  # Session-only: auto-publish own list when it changes
         self._config = config
 
         self._running = False
@@ -572,6 +573,17 @@ class SyncplayClient(object):
             self.ui.showMessage("Trusted domains updated")
             # TODO: Properly add message for setting trusted domains!
             # TODO: Handle cases where users add www. to start of domain
+        # Auto-share to the room when the session flag is on. Runs even if the list is unchanged so
+        # ticking "share" in the dialog on an unchanged list still publishes; gated on admin/controller
+        # status to avoid firing a server-rejected publish if admin was lost mid-session.
+        if self._shareTrustedDomainsOnUpdate and self.userlist.currentUser.isController():
+            self.publishTrustedDomains()
+
+    def getShareTrustedDomainsOnUpdate(self):
+        return self._shareTrustedDomainsOnUpdate
+
+    def setShareTrustedDomainsOnUpdate(self, enabled):
+        self._shareTrustedDomainsOnUpdate = bool(enabled)
 
     def effectiveTrustedDomains(self):
         # User's own trusted domains, plus any accepted server-published ones (session-only overlay).

@@ -289,6 +289,8 @@ en = {
     "unpause-always": "Always unpause",
     "syncplay-trusteddomains-title": "Trusted domains (for streaming services and hosted content)",
     "receiveservertrusteddomains-label": "Accept trusted domains shared by server admins",
+    "sharetrusteddomains-checkbox-label": "Share these trusted domains with everyone in the room (admins/controllers only)",
+    "sharetrusteddomains-checkbox-tooltip": "Sends your trusted domain list to the room now and re-sends it whenever you change your list this session. Requires admin or room-controller rights and is not saved between sessions.",
 
     "chat-title": "Chat message input",
     "chatinputenabled-label": "Enable chat input via mpv",
@@ -533,7 +535,7 @@ en = {
     "track-proposal-published-chat-message": "Track recommendation published to the room.",
     "track-proposal-unauthorised-chat-message": "Only server admins can publish track recommendations.",
     "tracks-command-notice-chat-message": "Track recommendations are published by server admins from a compatible player (Ctrl+T in mpv, or type /tracks there).",
-    "domains-unauthorised-chat-message": "Only server admins can publish trusted domains.",
+    "domains-unauthorised-chat-message": "Only server admins or room controllers can publish trusted domains.",
     "domains-published-chat-message": "Published {} trusted domain(s) to the room.", # Domain count
     "domains-empty-chat-message": "Your trusted domains list is empty - nothing to publish.",
     "domains-shared-chat-message": "{} shared trusted domains: {}", # Admin username, comma-separated domains

@@ -21,13 +21,14 @@ def check(name, cond, detail=""):
 
 # ---------------- server side ----------------
 class FW:
-    def __init__(self, name, admin=False, version="1.7.6", features=None):
-        self._name, self._admin = name, admin
+    def __init__(self, name, admin=False, controller=False, version="1.7.6", features=None):
+        self._name, self._admin, self._controller = name, admin, controller
         self._version, self._features = version, features or {}
         self.chats, self.domains = [], []
         self._room = None
     def getName(self): return self._name
     def isAdmin(self): return self._admin
+    def isController(self): return self._admin or self._controller
     def isAfk(self): return False
     def getRoom(self): return self._room
     def supportsFeature(self, ft): return self._features.get(ft, False)
@@ -47,9 +48,20 @@ room._watchers = {"adm": adm, "cap": cap, "legacy": legacy, "pre": pre}
 
 # authorization
 f.setTrustedDomains(cap, {"domains": ["vimeo.com"]})
-check("non-admin publish: private error, nothing stored",
-      cap.chats == ["Only server admins can publish trusted domains."] and room.getTrustedDomains() is None)
+check("non-admin/non-controller publish: private error, nothing stored",
+      cap.chats == ["Only server admins or room controllers can publish trusted domains."] and room.getTrustedDomains() is None)
 cap.chats.clear()
+
+# a room controller (not a server admin) is authorised too - controllers are equated to admins here
+ctrl = FW("ctrl", controller=True, features={"trustedDomains": True}); ctrl._room = room
+room._watchers["ctrl"] = ctrl
+f.setTrustedDomains(ctrl, {"domains": ["ctrl.example"]})
+check("room controller publish: authorised + stored",
+      room.getTrustedDomains() is not None and room.getTrustedDomains()["by"] == "ctrl"
+      and "Only server admins" not in "".join(ctrl.chats), repr((room.getTrustedDomains(), ctrl.chats)))
+room.setTrustedDomains(None)
+del room._watchers["ctrl"]
+for w in room.getWatchers(): w.chats.clear(); w.domains.clear()
 
 # publish + routing + normalization
 f.setTrustedDomains(adm, {"domains": ["Vimeo.com", " CDN.example ", "vimeo.com", "x" * 400, ""]})
@@ -225,10 +237,44 @@ con.executeCommand("domains")
 con.executeCommand("trustdomains")
 check("consoleUI /domains + /trustdomains dispatch", ccalls == [1, 1])
 
+# setTrustedDomains: auto-share-on-update session flag
+def makeClient(flag, controller, trusted=None):
+    c = SyncplayClient.__new__(SyncplayClient)
+    c._config = {"trustedDomains": trusted if trusted is not None else ["old.example"]}
+    c._shareTrustedDomainsOnUpdate = flag
+    c.userlist = types.SimpleNamespace(currentUser=types.SimpleNamespace(isController=lambda: controller))
+    c.fileSwitchFoundFiles = lambda: None
+    c.ui = types.SimpleNamespace(showMessage=lambda *a, **k: None)
+    pub = []
+    c.publishTrustedDomains = lambda: pub.append(1)
+    return c, pub
+
+with mock.patch("syncplay.ui.ConfigurationGetter.ConfigurationGetter") as CG:
+    CG.return_value.setConfigOption = lambda *a, **k: None
+    # flag on + controller: publishes on a changed list
+    c, pub = makeClient(True, True); SyncplayClient.setTrustedDomains(c, ["new.example"])
+    check("update: flag on + admin, changed list -> publish", pub == [1])
+    # flag on + controller: publishes even when the list is unchanged ("share now")
+    c, pub = makeClient(True, True, trusted=["same.example"]); SyncplayClient.setTrustedDomains(c, ["same.example"])
+    check("update: flag on + admin, unchanged list -> still publish", pub == [1])
+    # flag off: never auto-publishes
+    c, pub = makeClient(False, True); SyncplayClient.setTrustedDomains(c, ["new.example"])
+    check("update: flag off -> no publish", pub == [])
+    # flag on but not controller: guarded (server would reject)
+    c, pub = makeClient(True, False); SyncplayClient.setTrustedDomains(c, ["new.example"])
+    check("update: flag on but not admin -> no publish", pub == [])
+
+# session accessors default off + round-trip
+acc = SyncplayClient.__new__(SyncplayClient); acc._shareTrustedDomainsOnUpdate = False
+check("accessor: default off", SyncplayClient.getShareTrustedDomainsOnUpdate(acc) is False)
+SyncplayClient.setShareTrustedDomainsOnUpdate(acc, True)
+check("accessor: set/get round-trip", SyncplayClient.getShareTrustedDomainsOnUpdate(acc) is True)
+
 # ---------------- i18n ----------------
 keys = ["domains-unauthorised-chat-message", "domains-published-chat-message", "domains-empty-chat-message",
         "domains-shared-chat-message", "domains-command-notice-chat-message", "server-trusted-domains-notification",
-        "receiveservertrusteddomains-label", "receiveservertrusteddomains-tooltip"]
+        "receiveservertrusteddomains-label", "receiveservertrusteddomains-tooltip",
+        "sharetrusteddomains-checkbox-label", "sharetrusteddomains-checkbox-tooltip"]
 for k in keys:
     check("en key: " + k, k in M.messages["en"])
 bad = [l for l in M.getMissingStrings().splitlines() if "Unused" in l and ("domain" in l.lower() or "receiveserver" in l.lower())]

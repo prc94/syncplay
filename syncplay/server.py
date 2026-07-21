@@ -389,10 +389,12 @@ class SyncFactory(Factory):
         return options, remainder
 
     def setTrustedDomains(self, watcher, payload):
-        # Admin publishes their own client's trusted-domains list to the room. Capable clients get
-        # Set:trustedDomains (merged session-only, subject to their opt-out); others get an
-        # informational chat line.
-        if not watcher.isAdmin():
+        # An admin or room controller publishes their own client's trusted-domains list to the room.
+        # Capable clients get Set:trustedDomains (merged session-only, subject to their opt-out);
+        # others get an informational chat line. isController() covers admins everywhere plus managed-
+        # room operators - the client has no separate admin bit, so its share checkbox uses the same
+        # test (see gui.openSetTrustedDomainsDialog).
+        if not watcher.isController():
             watcher.sendChatMessage({"message": getMessage("domains-unauthorised-chat-message"),
                                      "username": watcher.getName()})
             return

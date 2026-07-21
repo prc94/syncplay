@@ -1325,12 +1325,20 @@ class MainWindow(QtWidgets.QMainWindow):
         TrustedDomainsTextbox.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
         TrustedDomainsTextbox.setPlainText(utils.getListAsMultilineString(self.config["trustedDomains"]))
         TrustedDomainsLayout.addWidget(TrustedDomainsTextbox, 1, 0, 1, 1)
+        # Admin-only opt-in: also publish the list to the room now, and re-publish on future edits
+        # this session. Disabled for non-admins (the server rejects non-admin publishes).
+        isAdmin = bool(self._syncplayClient) and self._syncplayClient.userlist.currentUser.isController()
+        ShareTrustedDomainsCheckbox = QtWidgets.QCheckBox(getMessage("sharetrusteddomains-checkbox-label"))
+        ShareTrustedDomainsCheckbox.setToolTip(getMessage("sharetrusteddomains-checkbox-tooltip"))
+        ShareTrustedDomainsCheckbox.setEnabled(isAdmin)
+        ShareTrustedDomainsCheckbox.setChecked(isAdmin and self._syncplayClient.getShareTrustedDomainsOnUpdate())
+        TrustedDomainsLayout.addWidget(ShareTrustedDomainsCheckbox, 2, 0, 1, 1)
         TrustedDomainsButtonBox = QtWidgets.QDialogButtonBox()
         TrustedDomainsButtonBox.setOrientation(Qt.Horizontal)
         TrustedDomainsButtonBox.setStandardButtons(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
         TrustedDomainsButtonBox.accepted.connect(TrustedDomainsDialog.accept)
         TrustedDomainsButtonBox.rejected.connect(TrustedDomainsDialog.reject)
-        TrustedDomainsLayout.addWidget(TrustedDomainsButtonBox, 2, 0, 1, 1)
+        TrustedDomainsLayout.addWidget(TrustedDomainsButtonBox, 3, 0, 1, 1)
         TrustedDomainsDialog.setLayout(TrustedDomainsLayout)
         TrustedDomainsDialog.setWindowFlags(TrustedDomainsDialog.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         TrustedDomainsDialog.setModal(True)
@@ -1338,6 +1346,8 @@ class MainWindow(QtWidgets.QMainWindow):
         result = TrustedDomainsDialog.exec_()
         if result == QtWidgets.QDialog.Accepted:
             newTrustedDomains = utils.convertMultilineStringToList(TrustedDomainsTextbox.toPlainText())
+            if isAdmin:
+                self._syncplayClient.setShareTrustedDomainsOnUpdate(ShareTrustedDomainsCheckbox.isChecked())
             self._syncplayClient.setTrustedDomains(newTrustedDomains)
 
     @needsClient
