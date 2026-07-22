@@ -180,6 +180,8 @@ class SyncFactory(Factory):
                 room.yapReset()
                 room.setTrackProposal(None)
                 room.setTrustedDomains(None)
+            else:
+                self._yapNoteAfkPresence(room)  # an AFK watcher may have just left
             if self.roomsDbFile:
                 l = lambda w: w.sendList(toGUIOnly=True)
                 self._roomManager.broadcast(watcher, l)
@@ -613,9 +615,12 @@ class SyncFactory(Factory):
             elapsed = room.yapEndPause()
             self._stopYapTicker(room)
             if elapsed is not None:
+                total = room.yapTotal()
+                afk = room.yapAfkTotal()
                 self._broadcastYapToRoom(
                     room, watcher.getName(),
-                    getMessage("yap-timer-unpaused-chat-message").format(formatTime(elapsed), formatTime(room.yapTotal())))
+                    getMessage("yap-timer-unpaused-chat-message").format(
+                        formatTime(elapsed), formatTime(total), formatTime(total - afk), formatTime(afk)))
 
     def _getRoomFileKey(self, room):
         # A value that changes when the room's current file changes, so the total can reset.
@@ -634,6 +639,12 @@ class SyncFactory(Factory):
     def _yapNoteFileChange(self, room):
         if self.yapTimer and room is not None:
             room.yapResetIfFileChanged(self._getRoomFileKey(room))
+
+    def _yapNoteAfkPresence(self, room):
+        # Tell the room's yap timer that its AFK presence may have changed, so the current
+        # pause is split into "AFK" vs "active" time correctly.
+        if self.yapTimer and room is not None:
+            room.yapNoteAfkPresence(room.hasAfkWatcher())
 
     def _broadcastYapToRoom(self, room, username, message):
         messageDict = {"message": message, "username": username}
@@ -655,9 +666,12 @@ class SyncFactory(Factory):
         if not room.isPaused() or room.isEmpty() or room.yapCheckExpired():
             self._stopYapTicker(room)
             return
+        total = room.yapTotal()
+        afk = room.yapAfkTotal()
         self._broadcastYapToRoom(
             room, room.yapPausedByName() or "",
-            getMessage("yap-timer-ongoing-chat-message").format(formatTime(room.yapCurrentElapsed()), formatTime(room.yapTotal())))
+            getMessage("yap-timer-ongoing-chat-message").format(
+                formatTime(room.yapCurrentElapsed()), formatTime(total), formatTime(total - afk), formatTime(afk)))
 
     def updatePauseWarning(self, room, paused, watcher):
         # Warn the room when a single pause exceeds the threshold. Capable clients blink an OSD alert
@@ -737,6 +751,7 @@ class SyncFactory(Factory):
         if isAfk and not self.disableReady and watcher.isReady() is not False:
             watcher.setReady(False)
             self._roomManager.broadcastRoom(watcher, lambda w: w.sendSetReady(watcher.getName(), False, False))
+        self._yapNoteAfkPresence(room)  # AFK presence flipped: split the current pause accordingly
 
     def _broadcastAfkToRoom(self, watcher):
         # Join/room-switch resync (mirrors the sendSetReady rebroadcast): fixes stale AFK views
@@ -1085,6 +1100,9 @@ class Room(object):
         self._permanent = False
         self._yapPauseStartedAt = None  # Wall-clock time the current pause began (None while playing)
         self._yapTotalThisFile = 0.0  # Accumulated duration of completed pauses for the current file
+        self._yapAfkTotalThisFile = 0.0  # Of that total, the portion spent with an AFK watcher present (active = total - afk)
+        self._yapAfkAccumThisPause = 0.0  # Closed AFK segments within the current pause (folded into the file total on unpause)
+        self._yapAfkSegStartedAt = None  # Start of the currently-open AFK segment (None when no AFK watcher, or not paused)
         self._yapCurrentFileKey = None  # Identifies the current file; total resets when this changes
         self._yapPausedByName = None  # Username that started the current pause (for chat attribution)
         self._yapTickTimer = None  # LoopingCall broadcasting periodic "still paused" updates
@@ -1188,6 +1206,25 @@ class Room(object):
             self._yapPauseStartedAt = time.time()
             self._yapPausedByName = pausedByName
             self._yapExpired = False  # a new pause starts with a clean slate
+            # Split the pause into "AFK" vs "active" segments: an AFK segment is open whenever
+            # the room has an AFK watcher. Seed it from the current presence.
+            self._yapAfkAccumThisPause = 0.0
+            self._yapAfkSegStartedAt = time.time() if self.hasAfkWatcher() else None
+
+    def yapNoteAfkPresence(self, hasAfk):
+        # Called whenever the room's AFK presence may have flipped. Opens/closes the current
+        # AFK segment on the edges; a no-op unless a (non-expired) pause is actively timed.
+        if self._yapPauseStartedAt is None or self._yapExpired:
+            return
+        if hasAfk and self._yapAfkSegStartedAt is None:
+            self._yapAfkSegStartedAt = time.time()
+        elif not hasAfk and self._yapAfkSegStartedAt is not None:
+            self._yapCloseAfkSegment()
+
+    def _yapCloseAfkSegment(self):
+        if self._yapAfkSegStartedAt is not None:
+            self._yapAfkAccumThisPause += time.time() - self._yapAfkSegStartedAt
+            self._yapAfkSegStartedAt = None
 
     def yapEndPause(self):
         if self._yapPauseStartedAt is None:
@@ -1196,10 +1233,15 @@ class Room(object):
             # The pause outlived YAP_TIMER_MAX_PAUSE: discard it entirely (no accumulation,
             # and returning None suppresses the unpause summary).
             self._yapPauseStartedAt = None
+            self._yapAfkSegStartedAt = None
+            self._yapAfkAccumThisPause = 0.0
             return None
+        self._yapCloseAfkSegment()
         elapsed = time.time() - self._yapPauseStartedAt
         self._yapTotalThisFile += elapsed
+        self._yapAfkTotalThisFile += self._yapAfkAccumThisPause
         self._yapPauseStartedAt = None
+        self._yapAfkAccumThisPause = 0.0
         return elapsed
 
     def yapCheckExpired(self):
@@ -1210,6 +1252,7 @@ class Room(object):
                 and time.time() - self._yapPauseStartedAt >= constants.YAP_TIMER_MAX_PAUSE:
             self._yapExpired = True
             self._yapTotalThisFile = 0.0
+            self._yapAfkTotalThisFile = 0.0
         return self._yapExpired
 
     def yapCurrentElapsed(self):
@@ -1217,14 +1260,27 @@ class Room(object):
             return 0.0
         return time.time() - self._yapPauseStartedAt
 
+    def yapAfkCurrentElapsed(self):
+        # AFK time within the current pause: closed segments plus any open one.
+        if self._yapPauseStartedAt is None:
+            return 0.0
+        openSeg = (time.time() - self._yapAfkSegStartedAt) if self._yapAfkSegStartedAt is not None else 0.0
+        return self._yapAfkAccumThisPause + openSeg
+
     def yapTotal(self):
         return self._yapTotalThisFile + self.yapCurrentElapsed()
+
+    def yapAfkTotal(self):
+        return self._yapAfkTotalThisFile + self.yapAfkCurrentElapsed()
 
     def yapPausedByName(self):
         return self._yapPausedByName
 
     def yapReset(self):
         self._yapTotalThisFile = 0.0
+        self._yapAfkTotalThisFile = 0.0
+        self._yapAfkAccumThisPause = 0.0
+        self._yapAfkSegStartedAt = None
         self._yapPauseStartedAt = None
         self._yapExpired = False
 

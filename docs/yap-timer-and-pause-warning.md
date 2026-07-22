@@ -15,7 +15,10 @@ Tracks how much time a room spends paused and shows it to everyone.
 * **Current pause** — how long the room has been paused right now.
 * **Total for the current file** — the sum of all pauses since this file
   started playing. The total **resets automatically when the file changes**
-  (new playlist entry or a new file opened).
+  (new playlist entry or a new file opened). The total is broken down into
+  **active** time (paused while *nobody* was [AFK](#afk-state)) versus **AFK**
+  time (paused while at least one person was away) — so you can tell real
+  discussion apart from waiting on someone who stepped away.
 
 ### Enabling
 
@@ -31,14 +34,17 @@ That's all — no client configuration exists or is needed.
 the player (cyan text) that updates every second while paused:
 
 ```
-Yap timer: 00:42 (total 12:52)
+Yap timer: 00:42 (total 12:52: 09:00 active / 03:52 AFK)
 ```
 
 On resume, the overlay briefly shows the final tally and then hides:
 
 ```
-Total yapped this file: 12:52
+Total yapped this file: 12:52 (09:00 active / 03:52 AFK)
 ```
+
+The `active` and `AFK` figures always add up to the total; when nobody has been
+AFK on the current file, the AFK figure is simply `00:00`.
 
 **Everyone else** (VLC, MPC-HC/BE, mplayer, console users, and clients older
 than this feature) sees the same information as chat messages, which Syncplay
@@ -46,8 +52,8 @@ already displays in the player OSD / chat area:
 
 ```
 <Alice> paused - yap timer running
-<Alice> still paused - 01:00 this pause (03:10 total)      (every 60 s)
-<Alice> unpaused - yapped for 02:34 (05:44 total this file)
+<Alice> still paused - 01:00 this pause (03:10 total: 02:10 active / 01:00 AFK)   (every 60 s)
+<Alice> unpaused - yapped for 02:34 (05:44 total this file: 04:44 active / 01:00 AFK)
 ```
 
 Messages are attributed to the user who paused. Clients older than 1.5.0
@@ -137,7 +143,10 @@ A third per-user state alongside *ready* and *not ready*. Marking yourself
   automatically (within about a second) once the last AFK person returns or
   leaves the room, if the pause is still over the threshold.
 * The **yap timer keeps counting** exactly as normal — the pause is still time
-  the room spent paused, so it is still measured and displayed.
+  the room spent paused, so it is still measured and displayed. That time is
+  attributed to the timer's **AFK** portion (rather than **active**) for as long
+  as anyone in the room is AFK, so the split reflects who the room was waiting
+  on. Toggling AFK mid-pause moves subsequent seconds between the two portions.
 
 An AFK user is also shown as **not ready** (so autoplay and "everyone ready"
 correctly wait for them), marked with a clock icon in the user list, and

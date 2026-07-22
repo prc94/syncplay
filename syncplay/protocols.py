@@ -306,7 +306,8 @@ class SyncClientProtocol(JSONCommandProtocol):
             messageAge, latencyCalculation = self._handleStatePing(state)
         if "yapTimer" in state:
             yap = state["yapTimer"]
-            self._client.ui.updateYapTimer(yap.get("paused", False), yap.get("current", 0), yap.get("total", 0))
+            self._client.ui.updateYapTimer(
+                yap.get("paused", False), yap.get("current", 0), yap.get("total", 0), yap.get("afkTotal", 0))
         if "pauseWarning" in state:
             self._client.ui.updatePauseWarning(state["pauseWarning"].get("message", ""))
         if position is not None and paused is not None and not self.clientIgnoringOnTheFly:
@@ -791,6 +792,7 @@ class SyncServerProtocol(JSONCommandProtocol):
                 "paused": room.isPaused(),
                 "current": room.yapCurrentElapsed(),
                 "total": room.yapTotal(),
+                "afkTotal": room.yapAfkTotal(),  # of the total, time spent with an AFK watcher present
             }
         if self._factory.pauseWarningAfter and room and room._pauseWarningActive \
                 and not yapExpired and not room.hasAfkWatcher() \
