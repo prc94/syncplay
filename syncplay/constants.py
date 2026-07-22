@@ -105,6 +105,7 @@ MPV_PUBLISH_TRACKS_KEY = "Ctrl+t"  # Default hotkey; rebindable via script bindi
 MPV_APPLY_TRACKS_KEY = "Alt+t"  # Viewer hotkey to (re-)apply the recommendation; script binding "syncplay_apply_tracks"
 TRACK_PROPOSAL_OSD_POSITION = "bottom-center"  # Receipt notice placement (mirrored in syncplayintf.lua show_track_osd)
 TRACK_PROPOSAL_OSD_DURATION = 6.0  # Secs (mirrored in syncplayintf.lua show_track_osd)
+TRACK_CACHE_MAX_ENTRIES = 32  # Distinct layout signatures remembered per room (oldest evicted first; mirrored in syncplayintf.lua)
 
 # Generic OSD message channel (server -> capable clients; chat fallback for the rest)
 OSD_MESSAGE_COMMAND = "/osd"  # Chat prefix intercepted server-side (room operators and server admins)

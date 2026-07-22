@@ -72,6 +72,10 @@ class SyncFactory(Factory):
             self.certPath = None
             self.options = None
             self.serverAcceptsTLS = False
+        # Per-room track-proposal cache: roomName -> {signature: proposal}. Runtime-only (not
+        # persisted to the rooms DB) but deliberately NOT cleared on room-empty, so a layout we
+        # have seen auto-reapplies to any later matching file without the admin re-publishing.
+        self._trackCache = {}
 
     def loadListFromMultilineTextFile(self, path):
         if not os.path.isfile(path):
@@ -155,7 +159,11 @@ class SyncFactory(Factory):
                 watcher.sendControlledRoomAuthStatus(True, controller, roomName)
         if watcher.isAdmin():
             self._broadcastAdminStatus(watcher)  # keep the operator icon in the new room
-        if room.getTrackProposal() is not None:
+        cachedProposals = self._cachedTrackProposals(roomName)
+        if watcher.supportsFeature("trackProposals") and cachedProposals:
+            for proposal in cachedProposals:  # hand the capable client the whole per-room layout cache
+                watcher.sendTrackProposal(proposal)
+        elif room.getTrackProposal() is not None:
             self._sendTrackProposalToWatcher(watcher, room.getTrackProposal())  # late joiners get the recommendation
         if room.getTrustedDomains() is not None:
             self._sendTrustedDomainsToWatcher(watcher, room.getTrustedDomains())  # late joiners get the domains
@@ -538,12 +546,28 @@ class SyncFactory(Factory):
             proposal["signature"] = signature[:constants.TRACK_PROPOSAL_MAX_SIGNATURE_LENGTH]
         if "audioId" not in proposal and "subId" not in proposal:
             return  # nothing usable to recommend
-        room.setTrackProposal(proposal)
+        room.setTrackProposal(proposal)  # "latest" pointer (fallback chat, description, immediate apply)
+        self._cacheTrackProposal(room.getName(), proposal)  # remember this layout for later matching files
         chatText = self._trackProposalChatText(proposal)
         for receiver in room.getWatchers():
             self._sendTrackProposalToWatcher(receiver, proposal, chatText)
         watcher.sendChatMessage({"message": getMessage("track-proposal-published-chat-message"),
                                  "username": watcher.getName()})
+
+    def _cacheTrackProposal(self, roomName, proposal):
+        # Store the proposal keyed by its layout signature so a later file with the same layout can
+        # auto-apply it. No signature -> nothing to key on (uncached; still works as the "latest").
+        signature = proposal.get("signature")
+        if not signature:
+            return
+        cache = self._trackCache.setdefault(roomName, {})
+        cache.pop(signature, None)  # re-insert so the newest keys sort last for FIFO eviction
+        cache[signature] = proposal
+        while len(cache) > constants.TRACK_CACHE_MAX_ENTRIES:
+            del cache[next(iter(cache))]  # evict the oldest layout
+
+    def _cachedTrackProposals(self, roomName):
+        return list(self._trackCache.get(roomName, {}).values())
 
     @staticmethod
     def _trackProposalChatText(proposal):
