@@ -1191,6 +1191,12 @@ class SyncplayClient(object):
             self.setPaused(True)
         self.toggleAfk()
 
+    def toggleRoomLock(self):
+        # Player-keybind (Ctrl+L) entry point. The room's lock state lives server-side, so the
+        # toggle is resolved there (like /afk); non-admins just get the private "unauthorised"
+        # reply. Degrades to an unknown-command warning on stock/old servers.
+        self.sendChat(constants.TOGGLE_LOCK_COMMAND)
+
     @requireServerFeature("afk")
     def changeAfkState(self, newState):
         if bool(newState) != self.userlist.currentUser.isAfk():

@@ -669,6 +669,13 @@ end
 mp.add_key_binding("Ctrl+a", "syncplay_toggle_afk", toggle_afk)
 mp.register_script_message('toggle-afk', toggle_afk)
 
+-- Toggle the current room's lock; admin-gated and resolved server-side.
+function toggle_room_lock()
+    mp.commandv('print-text', '<SyncplayToggleLock>')
+end
+mp.add_key_binding("Ctrl+l", "syncplay_toggle_room_lock", toggle_room_lock)
+mp.register_script_message('toggle-room-lock', toggle_room_lock)
+
 mp.register_event("file-loaded", function()
     apply_track_proposal(true)  -- catch-up for late file switches + same-layout next episodes
 end)

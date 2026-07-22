@@ -51,6 +51,10 @@ unmodified server is a silent no-op — the password cannot leak into room chat.
   server reverts anyone else's attempts, exactly like a managed room does for non-operators.
   Everyone in the room is notified via chat.
 * **`/unlock`** — release the lock; the room behaves like a normal plain room again.
+* **`/togglelock`** — flip the lock on or off, whichever the room currently is. In mpv this is
+  bound to **Ctrl+L** (rebindable, and available as the `toggle-room-lock` script-message), so an
+  admin can lock/unlock without leaving the player. Non-admins pressing it just get the usual
+  "you are not an admin" reply.
 
 Locked state is **runtime-only**: it does not survive a server restart, and it ends when the room
 empties. If the only admin disconnects, the room stays locked (position extrapolates) until an

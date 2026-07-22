@@ -219,10 +219,30 @@ f.sendChat(sender, "/unlock")
 check("/unlock: room unlocked + notice", droom.isLocked() is False and any("unlocked" in c for c in other.chats))
 other.chats.clear(); sender.chats.clear()
 
+# ---------- /togglelock (Ctrl+L keybind) ----------
+assert droom.isLocked() is False
+f.sendChat(sender, "/togglelock")   # sender is admin; room currently unlocked
+check("/togglelock by admin (unlocked->locked): room locked + notice",
+      droom.isLocked() is True and any("locked this room" in c for c in other.chats))
+other.chats.clear(); sender.chats.clear()
+f.sendChat(sender, "/togglelock")   # now locked -> unlock
+check("/togglelock by admin (locked->unlocked): room unlocked + notice",
+      droom.isLocked() is False and any("unlocked" in c for c in other.chats))
+other.chats.clear(); sender.chats.clear()
+f.sendChat(other, "/togglelock")   # non-admin
+check("/togglelock by non-admin: private unauthorised, no change",
+      other.chats == ["Only server admins can do that. Authenticate with /admin <password>."]
+      and droom.isLocked() is False)
+other.chats.clear(); sender.chats.clear()
+
 mroom = ControlledRoom("+mm:ABCDEFGHIJKL", None)
 sender._room = mroom; mroom._watchers = {"sender": sender}
 f.sendChat(sender, "/lock")
 check("/lock in managed room: private already-managed notice",
+      sender.chats == ["This room is already managed - /lock only applies to plain rooms."] and mroom.isLocked() is False)
+sender.chats.clear()
+f.sendChat(sender, "/togglelock")
+check("/togglelock in managed room: private already-managed notice",
       sender.chats == ["This room is already managed - /lock only applies to plain rooms."] and mroom.isLocked() is False)
 sender._room = droom; sender.chats.clear()
 

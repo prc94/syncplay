@@ -491,6 +491,9 @@ class MpvPlayer(BasePlayer):
         if "<SyncplayToggleAfk>" in line:
             self.reactor.callFromThread(self._client.toggleAfkWithPause)
 
+        if "<SyncplayToggleLock>" in line:
+            self.reactor.callFromThread(self._client.toggleRoomLock)
+
         if "<SyncplayTrackProposal>" in line:
             try:
                 payload = json.loads(line.split("<SyncplayTrackProposal>")[1].split("</SyncplayTrackProposal>")[0])
