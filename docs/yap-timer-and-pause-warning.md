@@ -15,7 +15,9 @@ Tracks how much time a room spends paused and shows it to everyone.
 * **Current pause** — how long the room has been paused right now.
 * **Total for the current file** — the sum of all pauses since this file
   started playing. The total **resets automatically when the file changes**
-  (new playlist entry or a new file opened). The total is broken down into
+  (new playlist entry or a new file opened), and also when the file is
+  **rewound to the start** (a controller seeks back to the very beginning) —
+  replaying from scratch starts the tally fresh. The total is broken down into
   **active** time (paused while *nobody* was [AFK](#afk-state)) versus **AFK**
   time (paused while at least one person was away) — so you can tell real
   discussion apart from waiting on someone who stepped away.
