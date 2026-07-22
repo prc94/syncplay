@@ -256,6 +256,12 @@ class SyncFactory(Factory):
             if command == constants.UNLOCK_COMMAND:
                 self._handleLockChatCommand(watcher, locked=False)
                 return
+            if command == constants.TOGGLE_LOCK_COMMAND:
+                # Ctrl+L in mpv (and typed /togglelock) - flip the room's lock. State lives
+                # server-side, so the toggle is resolved here (like /afk does for readiness).
+                room = watcher.getRoom()
+                self._handleLockChatCommand(watcher, locked=(room is None or not room.isLocked()))
+                return
             if command == constants.AFK_COMMAND:
                 # Reaches the server only from stock clients (modded clients intercept /afk
                 # locally and toggle via Set:afk) - toggle for them so anyone can use it.
