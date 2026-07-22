@@ -87,8 +87,21 @@ chat. The server confirms privately.
 Matching is **by track layout, never by filename** — different releases of the same content with
 identical audio/sub layouts match; unrelated files are left untouched. Users with a different
 file loaded (slow loads, browsing) are handled gracefully: the proposal is stored and applied
-when a matching file finally loads. Proposals persist until replaced and end when the room
-empties.
+when a matching file finally loads.
+
+**Per-room layout cache.** The server remembers a recommendation for **each distinct track
+layout** it has seen in the room — not just the most recent one. Publish tracks for a show, watch
+something else, then come back to that show (or any file with a matching layout) and the earlier
+recommendation **re-applies automatically, with no need to publish again**. Late joiners and
+room-switchers receive the whole cache, so they too auto-apply on any remembered layout. Details:
+
+* Re-publishing for a layout that is already cached **replaces** its entry (last write wins).
+* The cache holds up to **32 layouts per room** (oldest evicted first) and is keyed only on the
+  layout signature, so two unrelated releases that happen to share an identical audio/sub layout
+  are treated as the same — the newer recommendation wins.
+* It **survives the room emptying** (unlike before), but is held in memory only: a **server
+  restart** clears it. Legacy (non-mpv) clients still only receive the latest recommendation as
+  chat, since the server can't match layouts on their behalf.
 
 ## Trusted domains
 

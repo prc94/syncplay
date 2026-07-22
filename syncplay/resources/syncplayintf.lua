@@ -183,7 +183,38 @@ function add_osd_message(payload_json)
     end
 end
 
-local track_proposal = nil  -- Admin-recommended default tracks; applied only on matching layouts
+-- Admin-recommended default tracks, cached per layout signature. The server remembers every layout
+-- it has seen for the room and (re)sends them, so a matching file auto-applies without a re-publish.
+-- Stored oldest-first; matched by track-layout signature, newest match wins.
+local track_proposals = {}
+local TRACK_CACHE_MAX = 32  -- mirror constants.TRACK_CACHE_MAX_ENTRIES
+
+local function store_track_proposal(payload)
+    if payload.signature ~= nil then  -- de-dupe: a fresh proposal for a known layout replaces it
+        for i = #track_proposals, 1, -1 do
+            if track_proposals[i].signature == payload.signature then
+                table.remove(track_proposals, i)
+            end
+        end
+    end
+    table.insert(track_proposals, payload)
+    while #track_proposals > TRACK_CACHE_MAX do
+        table.remove(track_proposals, 1)  -- evict the oldest layout
+    end
+end
+
+local function proposal_for_current_file()
+    local signature = track_layout_signature()
+    if signature == nil then
+        return nil
+    end
+    for i = #track_proposals, 1, -1 do  -- newest cached match wins
+        if track_proposals[i].signature == signature then
+            return track_proposals[i]
+        end
+    end
+    return nil
+end
 
 function track_layout_signature()
     -- Canonical audio/sub layout string: type:id:lang per track. Filenames are deliberately NOT
@@ -220,37 +251,38 @@ local function set_track_selection(prop, value)
 end
 
 function apply_track_proposal(show_note)
-    -- Layout-gated: applies only when the local file's track layout matches the proposal's.
-    -- A different (or no) file keeps the proposal stored for a later matching file-loaded.
+    -- Layout-gated: applies the cached proposal whose layout matches the local file. A different
+    -- (or no) file keeps every proposal stored for a later matching file-loaded.
     -- Returns a status string so the manual keybind can explain why nothing happened.
-    if track_proposal == nil then
+    if #track_proposals == 0 then
         return "none"
     end
     local signature = track_layout_signature()
     if signature == nil then
         return "idle"
     end
-    if track_proposal.signature == nil or signature ~= track_proposal.signature then
+    local proposal = proposal_for_current_file()
+    if proposal == nil then
         return "mismatch"
     end
     local applied = false
-    if track_proposal.audioId ~= nil then
-        applied = set_track_selection("aid", track_proposal.audioId) or applied
+    if proposal.audioId ~= nil then
+        applied = set_track_selection("aid", proposal.audioId) or applied
     end
-    if track_proposal.subId ~= nil then
-        applied = set_track_selection("sid", track_proposal.subId) or applied
+    if proposal.subId ~= nil then
+        applied = set_track_selection("sid", proposal.subId) or applied
     end
     if applied and show_note then
-        show_track_osd("Applied " .. track_proposal_description() .. " - recommended by " .. (track_proposal.by or "operator"))
+        show_track_osd("Applied " .. track_proposal_description(proposal) .. " - recommended by " .. (proposal.by or "operator"))
     end
     return applied and "applied" or "empty"
 end
 
-function track_proposal_description()
-    if track_proposal == nil then
+function track_proposal_description(proposal)
+    if proposal == nil then
         return ""
     end
-    return "audio " .. (track_proposal.audioName or "-") .. ", subtitles " .. (track_proposal.subName or "-")
+    return "audio " .. (proposal.audioName or "-") .. ", subtitles " .. (proposal.subName or "-")
 end
 
 function show_track_osd(text)
@@ -635,15 +667,18 @@ mp.register_script_message('set-track-proposal', function(e)
     if not ok or type(payload) ~= "table" then
         return
     end
-    track_proposal = payload
-    -- The receipt notice is status-aware: applied tracks are stated as applied (supported clients
-    -- default to them), deferred ones as a pending recommendation - never a misleading "applied".
-    local status = apply_track_proposal(false)
+    store_track_proposal(payload)
+    -- The receipt notice is status-aware and keyed to THIS payload: if it matches the current file
+    -- we apply it now and say so; otherwise it is cached for a later matching file - never a
+    -- misleading "applied". (A different cached proposal may match the current file, but the notice
+    -- is about the one just published.)
     local by = payload.by or "operator"
-    if status == "applied" then
-        show_track_osd("Applied " .. track_proposal_description() .. " - recommended by " .. by)
+    local signature = track_layout_signature()
+    if payload.signature ~= nil and signature == payload.signature then
+        apply_track_proposal(false)  -- applies the matching (this) proposal
+        show_track_osd("Applied " .. track_proposal_description(payload) .. " - recommended by " .. by)
     else
-        show_track_osd(by .. " recommends " .. track_proposal_description() .. " (applies when a matching file loads)")
+        show_track_osd(by .. " recommends " .. track_proposal_description(payload) .. " (applies when a matching file loads)")
     end
 end)
 
