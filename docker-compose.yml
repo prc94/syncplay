@@ -1,0 +1,66 @@
+# Syncplay server (fork with server-power features) — Docker Compose draft
+#
+# Quick start:
+#   docker compose up -d --build      # build the image and start the server
+#   docker compose logs -f            # follow server logs
+#   docker compose down               # stop and remove the container
+#
+# Configuration lives in two places:
+#   - the `environment:` block below (secrets / simple values), and
+#   - the `command:` list (any syncplayServer.py flag; run `--help` to see all).
+# Persistent files (TLS certs, motd, rooms/stats DBs) go in the `syncplay-config`
+# volume, mounted at /config. Copy `.env.example` to `.env` to supply secrets
+# without committing them.
+
+services:
+  syncplay:
+    build: .
+    image: syncplay-server
+    container_name: syncplay
+    restart: unless-stopped
+
+    ports:
+      - "8999:8999"          # host:container — change the host side to relocate
+
+    environment:
+      # Server password required to connect (blank = open server).
+      SYNCPLAY_PASSWORD: "${SYNCPLAY_PASSWORD:-}"
+      # Salt for managed-room passwords — set a stable value so room operator
+      # passwords survive restarts. Generate once, then keep it constant.
+      SYNCPLAY_SALT: "${SYNCPLAY_SALT:-}"
+      # Server-admin password (fork feature): enables /admin <pw> and modded
+      # clients' auto-auth. Leave blank to disable server admins entirely.
+      SYNCPLAY_ADMIN_PASSWORD: "${SYNCPLAY_ADMIN_PASSWORD:-}"
+
+    # Any syncplayServer.py argument goes here (overrides the image's default
+    # CMD). Uncomment the fork features you want; persistent files reference
+    # /config so they land in the named volume below.
+    command:
+      - "--port"
+      - "8999"
+      # --- persistent data (recommended) ---
+      # - "--rooms-db-file"
+      # - "/config/rooms.db"
+      # - "--motd-file"
+      # - "/config/motd.txt"
+      # --- fork features ---
+      # - "--yap-timer"
+      # - "--pause-warning-after"
+      # - "300"
+      # --- TLS (point at a dir holding cert.pem + privkey.pem) ---
+      # - "--tls"
+      # - "/config/certs"
+
+    volumes:
+      - syncplay-config:/config
+
+    healthcheck:
+      # Mirrors the Dockerfile healthcheck; overrides the port if you change it.
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8999), timeout=3).close()"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+volumes:
+  syncplay-config:
