@@ -85,6 +85,8 @@ ADMIN_COMMAND = "/admin"  # /admin <password> - authenticate as server admin
 LOCK_COMMAND = "/lock"  # Admin: lock the current plain room (only admins control playback)
 UNLOCK_COMMAND = "/unlock"  # Admin: unlock the current room
 AFK_COMMAND = "/afk"  # Toggle AFK state (stock clients; modded clients intercept /afk locally)
+INFO_COMMAND = "/info"  # Report current server-side room/config state privately to the sender
+INFO_FULL_ARGUMENT = "full"  # /info full - also include server configuration (admins/operators)
 
 # Admin-published trusted domains
 PUBLISH_DOMAINS_COMMAND = "/domains"  # Publish this client's trusted domains to the room (admin)

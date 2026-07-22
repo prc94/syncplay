@@ -274,6 +274,7 @@ class ConsoleUI(threading.Thread):
             self.showMessage(getMessage("commandlist-notification/help"), True)
             self.showMessage(getMessage("commandlist-notification/toggle"), True)
             self.showMessage(getMessage("commandlist-notification/afk"), True)
+            self.showMessage(getMessage("commandlist-notification/info"), True)
             self.showMessage(getMessage("commandlist-notification/create"), True)
             self.showMessage(getMessage("commandlist-notification/auth"), True)
             self.showMessage(getMessage("commandlist-notification/chat"), True)

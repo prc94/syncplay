@@ -261,6 +261,11 @@ class SyncFactory(Factory):
                 # locally and toggle via Set:afk) - toggle for them so anyone can use it.
                 self.setAfk(watcher, not watcher.isAfk())
                 return
+            if command == constants.INFO_COMMAND:
+                parts = message.split(" ", 1)
+                argument = parts[1].strip().lower() if len(parts) > 1 else ""
+                self._handleInfoChatCommand(watcher, full=(argument == constants.INFO_FULL_ARGUMENT))
+                return
             if command == constants.PUBLISH_DOMAINS_COMMAND:
                 # Only reaches the server from legacy clients (updated clients publish via Set).
                 watcher.sendChatMessage({"message": getMessage("domains-command-notice-chat-message"),
@@ -320,6 +325,72 @@ class SyncFactory(Factory):
         key = "room-locked-chat-message" if locked else "room-unlocked-chat-message"
         messageDict = {"message": getMessage(key).format(name), "username": name}
         self._roomManager.broadcastRoom(watcher, lambda w: w.sendChatMessage(messageDict))
+
+    @staticmethod
+    def _onOff(value):
+        return getMessage("info-enabled-chat-message" if value else "info-disabled-chat-message")
+
+    def _handleInfoChatCommand(self, watcher, full=False):
+        # Report current server-side state privately to the sender only (never broadcast).
+        # Room-level runtime state is always shown; server configuration is only appended on an
+        # explicit "/info full" and restricted to admins and managed-room operators. Secrets are
+        # only ever reported as present/absent.
+        name = watcher.getName()
+        room = watcher.getRoom()
+        if room is None:
+            watcher.sendChatMessage({"message": getMessage("info-unavailable-chat-message"), "username": name})
+            return
+
+        def send(message):
+            watcher.sendChatMessage({"message": message, "username": name})
+
+        # --- Room-level runtime state (everyone) ---
+        send(getMessage("info-room-header-chat-message").format(room.getName()))
+
+        if RoomPasswordProvider.isControlledRoom(room.getName()):
+            lockState = getMessage("info-lock-managed-chat-message")
+        elif room.isLocked():
+            lockState = getMessage("info-lock-locked-chat-message")
+        else:
+            lockState = getMessage("info-lock-unlocked-chat-message")
+        send(getMessage("info-lock-chat-message").format(lockState))
+
+        proposal = room.getTrackProposal()
+        send(getMessage("info-tracks-chat-message").format(
+            self._trackProposalChatText(proposal) if proposal else getMessage("info-none-chat-message")))
+
+        domains = room.getTrustedDomains()
+        if domains and domains.get("domains"):
+            domainsText = getMessage("info-domains-summary-chat-message").format(
+                len(domains["domains"]), domains.get("by", ""), ", ".join(domains["domains"]))
+        else:
+            domainsText = getMessage("info-none-chat-message")
+        send(truncateText(getMessage("info-domains-chat-message").format(domainsText), self.maxChatMessageLength))
+
+        controllers = sorted({w.getName() for w in room.getWatchers() if w.isAdmin()}
+                             | set(getattr(room, "_controllers", {}).keys()))
+        send(getMessage("info-controllers-chat-message").format(
+            ", ".join(controllers) if controllers else getMessage("info-none-chat-message")))
+
+        # --- Server configuration (admins and managed-room operators, on "/info full") ---
+        if not watcher.isController():
+            return
+        if not full:
+            send(getMessage("info-full-hint-chat-message"))
+            return
+        features = self.getFeatures()
+        send(getMessage("info-server-header-chat-message"))
+        send(getMessage("info-server-general-chat-message").format(
+            self._onOff(features["isolateRooms"]), self._onOff(features["readiness"]),
+            self._onOff(features["chat"]), self._onOff(features["persistentRooms"])))
+        send(getMessage("info-server-limits-chat-message").format(
+            features["maxChatMessageLength"], features["maxUsernameLength"],
+            features["maxRoomNameLength"], features["maxFilenameLength"]))
+        send(getMessage("info-server-admin-chat-message").format(
+            self._onOff(self.adminPassword is not None), self._onOff(bool(self.password)),
+            self._onOff(self.serverAcceptsTLS), len(self.permanentRooms)))
+        send(getMessage("info-server-yap-chat-message").format(
+            self._onOff(self.yapTimer), self.pauseWarningAfter, self.pauseWarningInterval))
 
     def sendOSDMessage(self, room, text, senderName, colour=None, position=None, size=None,
                        duration=None, assFormatting=False):

@@ -112,6 +112,7 @@ en = {
     "commandlist-notification/help": "\th - this help",
     "commandlist-notification/toggle": "\tt - toggles whether you are ready to watch or not",
     "commandlist-notification/afk": "\tafk - toggles your AFK status (pauses the pause-length warning, sets you as not ready)",
+    "commandlist-notification/info": "\tinfo - shows current server-side room state (info full also shows server config for admins)",
     "commandlist-notification/setready": "\tsr [name] - sets user as ready",
     "commandlist-notification/setnotready": "\tsn [name] - sets user as not ready",
     "commandlist-notification/create": "\tc [name] - create managed room using name of current room",
@@ -541,6 +542,25 @@ en = {
     "domains-shared-chat-message": "{} shared trusted domains: {}", # Admin username, comma-separated domains
     "domains-command-notice-chat-message": "Trusted domains are published by server admins from an updated client (Ctrl+D in mpv, or type /domains there).",
     "osd-command-usage-chat-message": "Usage: /osd [ass=1] [dur=secs] [colour=#RRGGBB] [pos=top|top-left|...|bottom-right] [size=N] message text (ass=1 enables raw ASS tags)",
+    "info-unavailable-chat-message": "No room information available.",
+    "info-none-chat-message": "none",
+    "info-enabled-chat-message": "on",
+    "info-disabled-chat-message": "off",
+    "info-room-header-chat-message": "Room '{}' state:",  # Room name
+    "info-lock-chat-message": "Lock: {}",  # Lock state description
+    "info-lock-locked-chat-message": "locked (only server admins can control playback)",
+    "info-lock-unlocked-chat-message": "unlocked",
+    "info-lock-managed-chat-message": "managed room (only operators can control playback)",
+    "info-tracks-chat-message": "Recommended tracks: {}",  # Track description or "none"
+    "info-domains-chat-message": "Trusted domains: {}",  # Domain summary or "none"
+    "info-domains-summary-chat-message": "{} by {}: {}",  # Count, publisher, comma-separated domains
+    "info-controllers-chat-message": "Controllers/admins: {}",  # Names or "none"
+    "info-full-hint-chat-message": "Type /info full to also see server configuration.",
+    "info-server-header-chat-message": "Server config:",
+    "info-server-general-chat-message": "Isolate rooms: {}, readiness: {}, chat: {}, persistent rooms: {}",  # on/off x4
+    "info-server-limits-chat-message": "Max lengths - chat: {}, username: {}, room: {}, filename: {}",  # chars x4
+    "info-server-admin-chat-message": "Admin password: {}, server password: {}, TLS: {}, permanent rooms: {}",  # on/off x3, count
+    "info-server-yap-chat-message": "Yap timer: {}, pause warning after: {}s, interval: {}s",  # on/off, secs, secs
 
     # Server notifications
     "welcome-server-notification": "Welcome to Syncplay server, ver. {0}",  # version
