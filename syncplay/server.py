@@ -211,6 +211,8 @@ class SyncFactory(Factory):
         if room.canControl(watcher):
             paused, position = room.isPaused(), watcher.getPosition()
             setBy = watcher
+            if doSeek:
+                self._yapNoteRewind(room, position)
             l = lambda w: w.sendState(position, paused, doSeek, setBy, True)
             room.setPosition(watcher.getPosition(), setBy)
             self._roomManager.broadcastRoom(watcher, l)
@@ -639,6 +641,12 @@ class SyncFactory(Factory):
     def _yapNoteFileChange(self, room):
         if self.yapTimer and room is not None:
             room.yapResetIfFileChanged(self._getRoomFileKey(room))
+
+    def _yapNoteRewind(self, room, position):
+        # A controller seeked the room back to (near) the start: reset the yap timer for the file.
+        if self.yapTimer and room is not None and position is not None \
+                and position <= constants.YAP_TIMER_REWIND_RESET_POSITION:
+            room.yapResetOnRewind()
 
     def _yapNoteAfkPresence(self, room):
         # Tell the room's yap timer that its AFK presence may have changed, so the current
@@ -1288,6 +1296,16 @@ class Room(object):
         if fileKey != self._yapCurrentFileKey:
             self.yapReset()
             self._yapCurrentFileKey = fileKey
+
+    def yapResetOnRewind(self):
+        # A rewind to the very start replays the file, so wipe the per-file totals exactly like a
+        # file change (the file key is unchanged, so yapResetIfFileChanged never catches it). If the
+        # room is still paused, re-arm a fresh pause clock from 00:00 so the current pause keeps
+        # counting instead of freezing mid-pause.
+        pausedByName = self._yapPausedByName
+        self.yapReset()
+        if self.isPaused():
+            self.yapStartPause(pausedByName)
 
     def getWatchers(self):
         return list(self._watchers.values())
