@@ -352,9 +352,9 @@ cp._client = client_mock
 cp.sendMessage = lambda m: None
 cp.handleState({"ping": {"latencyCalculation": 0, "serverRtt": 0},
                 "playstate": {"position": 1, "paused": True, "setBy": "x"},
-                "yapTimer": {"paused": True, "current": 3.2, "total": 9.9},
+                "yapTimer": {"paused": True, "current": 3.2, "total": 9.9, "afkTotal": 4.4},
                 "pauseWarning": {"message": "W!"}})
-check(S, "client parses yapTimer field", calls["yap"] == [(True, 3.2, 9.9)], str(calls["yap"]))
+check(S, "client parses yapTimer field (incl. afkTotal split)", calls["yap"] == [(True, 3.2, 9.9, 4.4)], str(calls["yap"]))
 check(S, "client parses pauseWarning field", calls["pw"] == [("W!",)], str(calls["pw"]))
 calls["yap"].clear(); calls["pw"].clear()
 cp.handleState({"ping": {"latencyCalculation": 0, "serverRtt": 0},
@@ -363,7 +363,7 @@ check(S, "no extras -> no UI calls (legacy server compat)", calls == {"yap": [],
 cp.handleState({"ping": {"latencyCalculation": 0, "serverRtt": 0},
                 "playstate": {"position": 1, "paused": True, "setBy": "x"},
                 "yapTimer": {}, "pauseWarning": {}})
-check(S, "malformed empty extras -> defaults, no crash", calls["yap"] == [(False, 0, 0)] and calls["pw"] == [("",)])
+check(S, "malformed empty extras -> defaults, no crash", calls["yap"] == [(False, 0, 0, 0)] and calls["pw"] == [("",)])
 
 # ---------------- Suite E: i18n integrity ----------------
 S = "E:i18n"
@@ -383,10 +383,17 @@ miss = M.getMissingStrings()
 bad = [l for l in miss.splitlines() if "Unused" in l and ("yap" in l.lower() or "pause-warning" in l.lower())]
 check(S, "no yap/pw keys leaked into non-English dicts", not bad, repr(bad))
 n_missing = len([l for l in miss.splitlines() if "Missing" in l and ("yap" in l.lower() or "pause-warning" in l.lower())])
-check(S, "translation fallback count = keys*12 langs", n_missing == len(keys) * 12, "{} lines".format(n_missing))
+# Derive the expected count from the live English dict x non-English languages instead of a
+# hard-coded magic number, so adding a yap/pw message never silently rebreaks this check.
+en_yap_pw_keys = [k for k in M.messages["en"] if "yap" in k.lower() or "pause-warning" in k.lower()]
+# Mirror getMissingStrings' own iteration: it skips both "en" and the "CURRENT" pseudo-language.
+n_langs = len([lang for lang in M.messages if lang not in ("en", "CURRENT")])
+check(S, "translation fallback count = yap/pw keys * non-en langs",
+      n_missing == len(en_yap_pw_keys) * n_langs,
+      "{} missing vs {} keys * {} langs".format(n_missing, len(en_yap_pw_keys), n_langs))
 fmt_checks = [
-    ("yap-timer-ongoing-chat-message", 2), ("yap-timer-unpaused-chat-message", 2),
-    ("yap-timer-osd-paused-message", 2), ("yap-timer-osd-total-message", 1),
+    ("yap-timer-ongoing-chat-message", 4), ("yap-timer-unpaused-chat-message", 4),
+    ("yap-timer-osd-paused-message", 4), ("yap-timer-osd-total-message", 3),
     ("pause-warning-default-message", 1),
 ]
 for k, n in fmt_checks:

@@ -43,7 +43,10 @@ if len(unpaused_lines) == 3:
     u1, u2, u3 = unpaused_lines
     check(SCEN, "P1 summary ~5s elapsed, ~5s total", "00:05" in u1[1], u1[1])
     check(SCEN, "P2 summary ~1s elapsed, ~6s total (accumulation)", "00:01" in u2[1] and "00:06" in u2[1], u2[1])
-    check(SCEN, "P3 summary total RESET by file change (~3s/~3s)", u3[1].count("00:03") == 2, u3[1])
+    # New file => per-file total resets: this pause == total == active (~00:03), nobody AFK (00:00).
+    check(SCEN, "P3 summary total RESET by file change (~3s/~3s active, 0 AFK)",
+          "yapped for 00:03" in u3[1] and "00:03 total this file" in u3[1]
+          and "00:03 active" in u3[1] and "00:00 AFK" in u3[1], u3[1])
 check(SCEN, "PW chats: 2 in P1 + 0 in P2 + 1 in P3", len(pw_lines) == 3,
       "got {} at {}".format(len(pw_lines), ["%.2f" % t for t, _ in pw_lines]))
 if len(pw_lines) == 3:
