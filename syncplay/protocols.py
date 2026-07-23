@@ -307,7 +307,8 @@ class SyncClientProtocol(JSONCommandProtocol):
         if "yapTimer" in state:
             yap = state["yapTimer"]
             self._client.ui.updateYapTimer(
-                yap.get("paused", False), yap.get("current", 0), yap.get("total", 0), yap.get("afkTotal", 0))
+                yap.get("paused", False), yap.get("current", 0), yap.get("total", 0),
+                yap.get("afkTotal", 0), yap.get("duration", None))
         if "pauseWarning" in state:
             self._client.ui.updatePauseWarning(state["pauseWarning"].get("message", ""))
         if position is not None and paused is not None and not self.clientIgnoringOnTheFly:
@@ -793,6 +794,7 @@ class SyncServerProtocol(JSONCommandProtocol):
                 "current": room.yapCurrentElapsed(),
                 "total": room.yapTotal(),
                 "afkTotal": room.yapAfkTotal(),  # of the total, time spent with an AFK watcher present
+                "duration": self._factory._getRoomFileDuration(room),  # current file runtime, for the drag ratio (None if unknown)
             }
         if self._factory.pauseWarningAfter and room and room._pauseWarningActive \
                 and not yapExpired and not room.hasAfkWatcher() \

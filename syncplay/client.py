@@ -1895,24 +1895,28 @@ class UiManager(object):
         if constants.DEBUG_MODE and message.rstrip():
             sys.stderr.write("{}{}\n".format(time.strftime(constants.UI_TIME_FORMAT, time.localtime()), message.rstrip()))
 
-    def updateYapTimer(self, paused, current, total, afkTotal=0):
+    def updateYapTimer(self, paused, current, total, afkTotal=0, duration=None):
         # Server-driven live yap timer (only sent to players that advertised yapTimer support).
         # While paused we refresh every state tick so the overlay stays visible and counts up; on
         # resume we show the final total once and let the player's overlay auto-hide. The per-file
         # total is split into "active" (nobody AFK) vs "AFK" time; afkTotal is 0 from older servers.
+        # A "drag" clause (total as a % of the file runtime) is appended when the server reports a
+        # duration; older servers omit it (None) so nothing is shown.
         if not self._client._player:
             return
         active = max(0, total - afkTotal)
+        pct = utils.dragRatioPercent(total, duration)
+        dragSuffix = getMessage("yap-timer-drag-suffix").format(pct) if pct is not None else ""
         if paused:
             self._yapTimerWasPaused = True
             text = getMessage("yap-timer-osd-paused-message").format(
                 utils.formatTime(current), utils.formatTime(total),
-                utils.formatTime(active), utils.formatTime(afkTotal))
+                utils.formatTime(active), utils.formatTime(afkTotal)) + dragSuffix
             self._client._player.updateYapTimerOSD(text)
         elif self._yapTimerWasPaused:
             self._yapTimerWasPaused = False
             text = getMessage("yap-timer-osd-total-message").format(
-                utils.formatTime(total), utils.formatTime(active), utils.formatTime(afkTotal))
+                utils.formatTime(total), utils.formatTime(active), utils.formatTime(afkTotal)) + dragSuffix
             self._client._player.updateYapTimerOSD(text)
 
     def updatePauseWarning(self, message):

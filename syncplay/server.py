@@ -21,7 +21,7 @@ import syncplay
 from syncplay import constants
 from syncplay.messages import getMessage
 from syncplay.protocols import SyncServerProtocol
-from syncplay.utils import RoomPasswordProvider, NotControlledRoom, RandomStringGenerator, meetsMinVersion, playlistIsValid, truncateText, getListAsMultilineString, convertMultilineStringToList, formatTime
+from syncplay.utils import RoomPasswordProvider, NotControlledRoom, RandomStringGenerator, meetsMinVersion, playlistIsValid, truncateText, getListAsMultilineString, convertMultilineStringToList, formatTime, dragRatioPercent
 
 class SyncFactory(Factory):
     def __init__(self, port='', password='', motdFilePath=None, roomsDbFile=None, permanentRoomsFile=None, isolateRooms=False, salt=None,
@@ -616,7 +616,8 @@ class SyncFactory(Factory):
                 self._broadcastYapToRoom(
                     room, watcher.getName(),
                     getMessage("yap-timer-unpaused-chat-message").format(
-                        formatTime(elapsed), formatTime(total), formatTime(total - afk), formatTime(afk)))
+                        formatTime(elapsed), formatTime(total), formatTime(total - afk), formatTime(afk))
+                    + self._yapDragSuffix(room, total))
 
     def _getRoomFileKey(self, room):
         # A value that changes when the room's current file changes, so the total can reset.
@@ -631,6 +632,27 @@ class SyncFactory(Factory):
         if file_:
             return "file:{}".format(file_)
         return None
+
+    def _getRoomFileDuration(self, room):
+        # Best-effort runtime of the room's current file for the drag ratio: the longest positive
+        # duration any watcher reports. Watchers may hold different releases and getSetBy() can point
+        # at a watcher with no file, so we scan all of them rather than trusting a single one.
+        best = 0.0
+        for w in room.getWatchers():
+            file_ = w.getFile()
+            if isinstance(file_, dict):
+                try:
+                    d = float(file_.get("duration"))
+                except (TypeError, ValueError):
+                    continue
+                if d > best:
+                    best = d
+        return best if best > 0 else None
+
+    def _yapDragSuffix(self, room, total):
+        # The " — drag N%" clause for the chat fallback, or "" when the file runtime is unknown.
+        pct = dragRatioPercent(total, self._getRoomFileDuration(room))
+        return getMessage("yap-timer-drag-suffix").format(pct) if pct is not None else ""
 
     def _yapNoteFileChange(self, room):
         if self.yapTimer and room is not None:
@@ -673,7 +695,8 @@ class SyncFactory(Factory):
         self._broadcastYapToRoom(
             room, room.yapPausedByName() or "",
             getMessage("yap-timer-ongoing-chat-message").format(
-                formatTime(room.yapCurrentElapsed()), formatTime(total), formatTime(total - afk), formatTime(afk)))
+                formatTime(room.yapCurrentElapsed()), formatTime(total), formatTime(total - afk), formatTime(afk))
+            + self._yapDragSuffix(room, total))
 
     def updatePauseWarning(self, room, paused, watcher):
         # Warn the room when a single pause exceeds the threshold. Capable clients blink an OSD alert

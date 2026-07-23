@@ -151,6 +151,19 @@ def formatTime(timeInSeconds, weeksAsTitles=True):
     return formattedTime
 
 
+def dragRatioPercent(total, duration):
+    # Yap-timer "drag ratio": total time the room spent paused on this file as a percentage of the
+    # file's runtime. Returns an int percentage, or None when it can't be computed (unknown/zero
+    # duration) so callers can omit the clause. Shared by the server chat fallback and the client
+    # overlay so both render the same figure.
+    try:
+        if duration and duration > 0 and total is not None and total >= 0:
+            return int(round(100.0 * total / duration))
+    except (TypeError, ValueError):
+        pass
+    return None
+
+
 def formatSize(numOfBytes, precise=False):
     if numOfBytes == 0:  # E.g. when file size privacy is enabled
         return "???"
