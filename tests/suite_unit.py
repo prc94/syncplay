@@ -71,6 +71,82 @@ check(S, "yapReset clears in-flight pause", r.yapCurrentElapsed() == 0.0 and r._
 cr = ControlledRoom("+ctl:aaaaaaaaaaaa", None)
 check(S, "ControlledRoom inherits yap fields", cr._yapPauseStartedAt is None and cr._pauseWarningTimer is None and cr._pauseWarningActive is False)
 
+# ---------------- Suite A2: yap active/AFK split ----------------
+S = "A2:AfkSplit"
+class AfkW:  # minimal watcher: only isAfk() feeds Room.hasAfkWatcher()
+    def __init__(self, afk): self._afk = afk
+    def isAfk(self): return self._afk
+    def getName(self): return "w"
+
+# All-active pause (nobody AFK): afkTotal stays 0, active == full elapsed.
+ra = Room("split-active", None)
+ra._watchers = {"w": AfkW(False)}
+ra.yapStartPause("A")
+check(S, "pause with no AFK watcher: no open AFK segment", ra._yapAfkSegStartedAt is None)
+ra._yapPauseStartedAt = time.time() - 4.0
+check(S, "all-active pause: afkTotal 0", ra.yapAfkTotal() == 0.0, "afk %.3f" % ra.yapAfkTotal())
+check(S, "all-active pause: active == elapsed ~4s", 3.8 < (ra.yapTotal() - ra.yapAfkTotal()) < 4.2,
+      "active %.3f" % (ra.yapTotal() - ra.yapAfkTotal()))
+ra.yapEndPause()
+check(S, "closed all-active pause: per-file afk 0, active ~4s",
+      ra._yapAfkTotalThisFile == 0.0 and 3.8 < ra._yapTotalThisFile < 4.2, "afk=%.3f tot=%.3f" % (ra._yapAfkTotalThisFile, ra._yapTotalThisFile))
+
+# A watcher goes AFK mid-pause, then returns: only the AFK window counts as AFK time.
+rs = Room("split", None)
+present = AfkW(False); rs._watchers = {"w": present}
+rs.yapStartPause("A")
+rs._yapPauseStartedAt = time.time() - 5.0     # 5s paused so far, all active
+present._afk = True
+rs.yapNoteAfkPresence(rs.hasAfkWatcher())      # presence flips -> opens an AFK segment
+rs._yapAfkSegStartedAt = time.time() - 2.0     # backdate: AFK for the last 2s
+check(S, "open AFK segment counts toward afkTotal ~2s", 1.8 < rs.yapAfkTotal() < 2.3, "afk %.3f" % rs.yapAfkTotal())
+check(S, "active = total - afk ~3s", 2.7 < (rs.yapTotal() - rs.yapAfkTotal()) < 3.3, "active %.3f" % (rs.yapTotal() - rs.yapAfkTotal()))
+present._afk = False
+rs.yapNoteAfkPresence(rs.hasAfkWatcher())       # returns -> segment closes and is banked
+check(S, "return from AFK banks the segment, clears open marker",
+      rs._yapAfkSegStartedAt is None and 1.8 < rs._yapAfkAccumThisPause < 2.3, "accum %.3f" % rs._yapAfkAccumThisPause)
+rs.yapEndPause()
+check(S, "unpause folds afk portion into per-file total ~2s", 1.8 < rs._yapAfkTotalThisFile < 2.3, "afk %.3f" % rs._yapAfkTotalThisFile)
+check(S, "per-file total > afk total (active time present)", rs._yapTotalThisFile > rs._yapAfkTotalThisFile,
+      "tot=%.3f afk=%.3f" % (rs._yapTotalThisFile, rs._yapAfkTotalThisFile))
+check(S, "noting AFK presence while playing is a no-op", (lambda rr: (rr.yapNoteAfkPresence(True), rr._yapAfkSegStartedAt is None)[1])(Room("idle", None)))
+
+# ---------------- Suite A3: yap rewind-to-start reset ----------------
+S = "A3:RewindReset"
+rw = Room("rewind", None)
+rw._playState = Room.STATE_PAUSED
+rw.yapStartPause("A")
+rw._yapPauseStartedAt = time.time() - 6.0       # 6s into the current pause
+rw._yapTotalThisFile = 10.0                     # plus prior pauses
+check(S, "pre-rewind total accumulated", rw.yapTotal() > 15.0, "total %.2f" % rw.yapTotal())
+rw.yapResetOnRewind()
+check(S, "rewind wipes per-file totals", rw._yapTotalThisFile == 0.0 and rw._yapAfkTotalThisFile == 0.0)
+check(S, "rewind re-arms a fresh pause clock (still paused)", rw._yapPauseStartedAt is not None and rw.yapCurrentElapsed() < 0.5,
+      "current %.3f" % rw.yapCurrentElapsed())
+check(S, "rewind keeps the pause attribution", rw.yapPausedByName() == "A")
+# rewind while playing must not re-arm a phantom pause
+rw2 = Room("rewind2", None)
+rw2._playState = Room.STATE_PLAYING
+rw2._yapTotalThisFile = 8.0
+rw2.yapResetOnRewind()
+check(S, "rewind while playing resets total, arms no pause", rw2._yapTotalThisFile == 0.0 and rw2._yapPauseStartedAt is None)
+
+# SyncFactory gate: only a controller seek to <= YAP_TIMER_REWIND_RESET_POSITION resets, and only when enabled.
+fg = SyncFactory.__new__(SyncFactory)
+fg.yapTimer = True
+rg = Room("gate", None); rg._playState = Room.STATE_PAUSED
+rg.yapStartPause("A"); rg._yapTotalThisFile = 5.0
+fg._yapNoteRewind(rg, 0.5)                       # <= 1.0s boundary -> reset
+check(S, "_yapNoteRewind resets on seek to start", rg._yapTotalThisFile == 0.0)
+rg._yapTotalThisFile = 5.0
+fg._yapNoteRewind(rg, constants.YAP_TIMER_REWIND_RESET_POSITION + 0.5)  # past the boundary -> no reset
+check(S, "_yapNoteRewind ignores mid-file seeks", rg._yapTotalThisFile == 5.0)
+expect_raise_free(S, "_yapNoteRewind safe on None position/room", lambda: (fg._yapNoteRewind(rg, None), fg._yapNoteRewind(None, 0.0)))
+fg.yapTimer = False
+rg._yapTotalThisFile = 5.0
+fg._yapNoteRewind(rg, 0.0)                        # feature off -> never resets
+check(S, "_yapNoteRewind no-op when yapTimer disabled", rg._yapTotalThisFile == 5.0)
+
 # ---------------- Suite B: SyncFactory config & text ----------------
 S = "B:ConfigText"
 f = SyncFactory.__new__(SyncFactory)
@@ -233,6 +309,8 @@ p.sendState(5.0, True, False, None, False)
 st = p._sent[0]["State"]
 check(S, "State yap payload sane", st["yapTimer"]["paused"] is True and 41 < st["yapTimer"]["current"] < 44,
       "current=%.2f total=%.2f" % (st["yapTimer"]["current"], st["yapTimer"]["total"]))
+check(S, "State yap payload carries afkTotal split field (0 with no AFK watcher)",
+      "afkTotal" in st["yapTimer"] and st["yapTimer"]["afkTotal"] == 0, repr(st["yapTimer"]))
 check(S, "State pw payload duration", "00:42" in st["pauseWarning"]["message"], repr(st["pauseWarning"]))
 
 # watcher without room must not crash
@@ -309,12 +387,15 @@ class FakeClient:
 
 fp = FakePlayer()
 ui = UiManager(FakeClient(fp), mock.Mock())
-ui.updateYapTimer(True, 12, 130)
-ui.updateYapTimer(True, 13, 131)
-ui.updateYapTimer(False, 0, 131)
-ui.updateYapTimer(False, 0, 131)
+ui.updateYapTimer(True, 12, 130, 30)   # total 02:10 = 01:40 active + 00:30 AFK
+ui.updateYapTimer(True, 13, 131, 30)
+ui.updateYapTimer(False, 0, 130, 30)   # resume: final total shown once
+ui.updateYapTimer(False, 0, 130, 30)   # already resumed -> silent
 check(S, "UiManager yap: 2 paused + 1 resume-total + silence", len(fp.yap) == 3, str(fp.yap))
-check(S, "UiManager yap resume shows total once", "02:11" in fp.yap[2], fp.yap[2])
+check(S, "UiManager yap paused OSD renders active/AFK split",
+      "01:40 active" in fp.yap[0] and "00:30 AFK" in fp.yap[0], fp.yap[0])
+check(S, "UiManager yap resume shows total + active/AFK split once",
+      "02:10" in fp.yap[2] and "01:40 active" in fp.yap[2] and "00:30 AFK" in fp.yap[2], fp.yap[2])
 ui.updatePauseWarning("W 00:12!")
 check(S, "UiManager pw passthrough", fp.pw == ["W 00:12!"])
 ui_nop = UiManager(FakeClient(None), mock.Mock())

@@ -322,6 +322,22 @@ cui._syncplayClient.reset_mock()
 cui.executeCommand("help")  # help stays local
 check("help stays local, not forwarded", not cui._syncplayClient.sendChat.called)
 
+# ---------- Ctrl+L room-lock: mpv marker -> client.toggleRoomLock -> /togglelock chat ----------
+from syncplay.players.mpv import MpvPlayer
+mpvL = MpvPlayer.__new__(MpvPlayer)
+routed = []
+mpvL.reactor = types.SimpleNamespace(callFromThread=lambda fn, *a: fn(*a))
+mpvL._client = types.SimpleNamespace(toggleRoomLock=lambda: routed.append("lock"))
+mpvL._listener = types.SimpleNamespace(sendLine=lambda l: None)
+mpvL._handleUnknownLine("<SyncplayToggleLock></SyncplayToggleLock>")
+check("mpv <SyncplayToggleLock> routes to client.toggleRoomLock", routed == ["lock"], repr(routed))
+lockStub = types.SimpleNamespace()
+lockSent = []
+lockStub.sendChat = lambda m: lockSent.append(m)
+SyncplayClient.toggleRoomLock(lockStub)
+check("client.toggleRoomLock sends the /togglelock command",
+      lockSent == [constants.TOGGLE_LOCK_COMMAND], repr(lockSent))
+
 # ---------- client config plumbing ----------
 from syncplay.ui.ConfigurationGetter import ConfigurationGetter as ClientCG
 cg = ClientCG()

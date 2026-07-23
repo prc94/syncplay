@@ -158,23 +158,43 @@ check("oldest layouts evicted first (FIFO)",
 check("cache isolated per room", fc._cachedTrackProposals("otherroom") == [])
 
 # ---------- room switch hands a capable joiner the whole per-room cache ----------
+# Self-contained: prime a fresh factory/room with a known number of layouts so the assertion
+# does not depend on cache state left behind by the eviction loop above.
+fs = SyncFactory.__new__(SyncFactory)
+fs._trackCache = {}
+fs.roomsDbFile = None
+fs.maxUsernameLength = 150
+fs.setAfk = lambda w, v: None
+fs.sendJoinMessage = lambda w: None
+fs.sendRoomSwitchMessage = lambda w: None
+srm = Room("switchroom", None)
+admS = FW("admS", admin=True, features={"trackProposals": True}); admS._room = srm
+srm._watchers = {"admS": admS}
+NLAYOUTS = 3
+for i in range(NLAYOUTS):
+    fs.setTrackProposal(admS, {"audioId": 1, "signature": "switch-layout-%d" % i})
 class SwitchRM:
     def moveWatcher(self, watcher, roomName):
-        watcher._room = crm  # join the room whose cache we primed above
+        watcher._room = srm  # join the primed room
     def broadcast(self, *a, **k): pass
     def broadcastRoom(self, *a, **k): pass
-fc._roomManager = SwitchRM()
-fc.roomsDbFile = None
-fc.maxUsernameLength = 150
-fc.setAfk = lambda w, v: None
-fc.sendJoinMessage = lambda w: None
-fc.sendRoomSwitchMessage = lambda w: None
-joiner = FW("joiner", features={"trackProposals": True}); joiner._room = crm
+fs._roomManager = SwitchRM()
+joiner = FW("joiner", features={"trackProposals": True}); joiner._room = srm
 joiner.setPlaylist = lambda *a: None
 joiner.setPlaylistIndex = lambda *a: None
-fc.setWatcherRoom(joiner, "cacheroom")
+fs.setWatcherRoom(joiner, "switchroom")
 check("capable joiner receives every cached layout on room switch",
-      len(joiner.proposals) == constants.TRACK_CACHE_MAX_ENTRIES, str(len(joiner.proposals)))
+      len(joiner.proposals) == NLAYOUTS, str(len(joiner.proposals)))
+
+# ---------- legacy (non-capable) joiner gets the room's latest proposal as chat, not the cache ----------
+legacyJoin = FW("legacyJoin", version="1.6.0"); legacyJoin._room = srm
+legacyJoin.file = {"name": "ep1.mkv"}
+legacyJoin.setPlaylist = lambda *a: None
+legacyJoin.setPlaylistIndex = lambda *a: None
+fs.setWatcherRoom(legacyJoin, "switchroom")
+check("legacy joiner: no Set payloads, single fallback chat for the latest proposal",
+      legacyJoin.proposals == [] and len(legacyJoin.chats) == 1 and "recommends tracks" in legacyJoin.chats[0],
+      repr(legacyJoin.chats))
 
 # ---------- /tracks legacy server notice + dispatcher ----------
 f2 = SyncFactory.__new__(SyncFactory)

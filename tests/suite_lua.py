@@ -99,8 +99,10 @@ check("lookup: newest cached match wins (reverse scan)", "for i = #track_proposa
 def make_cache():
     return []
 def store(cache, payload):
+    # Mirror lua store_track_proposal: signature-less payloads skip de-dupe but are still appended,
+    # and .signature comparisons are nil-safe (lua reads a missing field as nil, never errors).
     if payload.get("signature") is not None:
-        cache[:] = [p for p in cache if p["signature"] != payload["signature"]]
+        cache[:] = [p for p in cache if p.get("signature") != payload["signature"]]
     cache.append(payload)
     while len(cache) > constants.TRACK_CACHE_MAX_ENTRIES:
         cache.pop(0)
@@ -109,7 +111,7 @@ def lookup(cache, signature):
     if signature is None:
         return None
     for p in reversed(cache):  # newest wins
-        if p["signature"] == signature:
+        if p.get("signature") == signature:
             return p
     return None
 c = make_cache()
@@ -124,6 +126,9 @@ check("port: cache bounded + oldest evicted first",
       len(c) == constants.TRACK_CACHE_MAX_ENTRIES and lookup(c, "A") is None and lookup(c, "L0") is None
       and lookup(c, "L%d" % (constants.TRACK_CACHE_MAX_ENTRIES + 4)) is not None, str(len(c)))
 check("port: idle player (nil signature) never matches", lookup(c, None) is None)
+store(c, {"audioId": 7})  # signature-less payload (lua appends these too); must not break lookup scans
+check("port: nil-safe scan past a signature-less entry",
+      lookup(c, "L%d" % (constants.TRACK_CACHE_MAX_ENTRIES + 4)) is not None)
 
 # Python port of track_layout_signature + apply decision
 def sig(tracks):
