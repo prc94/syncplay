@@ -664,13 +664,27 @@ class SyncFactory(Factory):
 
     def _yapNoteFileChange(self, room):
         if self.yapTimer and room is not None:
-            room.yapResetIfFileChanged(self._getRoomFileKey(room))
+            if room.yapResetIfFileChanged(self._getRoomFileKey(room)) and self.pauseWarningAfter:
+                # The pause-warning threshold and OSD text are computed from the same pause clock the
+                # yap timer just reset (yapCurrentElapsed). A new file voids that clock, so drop any
+                # in-progress warning too - otherwise _pauseWarningActive stays stuck and the OSD
+                # lingers on the new file showing a sub-threshold duration. Unlike a rewind, the yap
+                # clock is not re-armed here (it waits for the next pause event), so neither is this.
+                self._stopPauseWarningTimer(room)
 
     def _yapNoteRewind(self, room, position):
         # A controller seeked the room back to (near) the start: reset the yap timer for the file.
         if self.yapTimer and room is not None and position is not None \
                 and position <= constants.YAP_TIMER_REWIND_RESET_POSITION:
             room.yapResetOnRewind()
+            # yapResetOnRewind re-armed a fresh pause clock (from 00:00) if the room is still paused.
+            # Keep the pause warning in lockstep: drop the stale over-threshold state and re-arm from
+            # now so the rewound pause must re-cross the threshold before it warns again.
+            if self.pauseWarningAfter:
+                if room.isPaused():
+                    self._startPauseWarningTimer(room)
+                else:
+                    self._stopPauseWarningTimer(room)
 
     def _yapNoteAfkPresence(self, room):
         # Tell the room's yap timer that its AFK presence may have changed, so the current
@@ -1320,6 +1334,8 @@ class Room(object):
         if fileKey != self._yapCurrentFileKey:
             self.yapReset()
             self._yapCurrentFileKey = fileKey
+            return True
+        return False
 
     def yapResetOnRewind(self):
         # A rewind to the very start replays the file, so wipe the per-file totals exactly like a

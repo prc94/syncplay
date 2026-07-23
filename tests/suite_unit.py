@@ -134,6 +134,7 @@ check(S, "rewind while playing resets total, arms no pause", rw2._yapTotalThisFi
 # SyncFactory gate: only a controller seek to <= YAP_TIMER_REWIND_RESET_POSITION resets, and only when enabled.
 fg = SyncFactory.__new__(SyncFactory)
 fg.yapTimer = True
+fg.pauseWarningAfter = 0  # pause-warning feature off here; these cases exercise yap reset only
 rg = Room("gate", None); rg._playState = Room.STATE_PAUSED
 rg.yapStartPause("A"); rg._yapTotalThisFile = 5.0
 fg._yapNoteRewind(rg, 0.5)                       # <= 1.0s boundary -> reset
@@ -146,6 +147,56 @@ fg.yapTimer = False
 rg._yapTotalThisFile = 5.0
 fg._yapNoteRewind(rg, 0.0)                        # feature off -> never resets
 check(S, "_yapNoteRewind no-op when yapTimer disabled", rg._yapTotalThisFile == 5.0)
+
+# ---------------- Suite A4: pause-warning reset on file change / rewind ----------------
+# The pause-warning threshold and OSD text share the yap pause clock (yapCurrentElapsed), so a
+# file change or rewind that resets that clock must also void an in-progress warning - otherwise
+# room._pauseWarningActive stays stuck and capable clients keep blinking the OSD with a
+# sub-threshold duration on the new/rewound file (the reported bug).
+S = "A4:PauseWarnReset"
+fp = SyncFactory.__new__(SyncFactory)
+fp.yapTimer = True; fp.pauseWarningAfter = 300; fp.pauseWarningInterval = 300; fp.pauseWarningMessage = "W {}!"
+
+# file change while a warning is active -> flag cleared, and NOT re-armed (yap clock waits for the
+# next pause event on the new file, so the warning does too)
+rfc = Room("pwfile", None); rfc._playState = Room.STATE_PAUSED
+rfc.yapStartPause("A"); rfc._pauseWarningActive = True
+rfc._yapCurrentFileKey = "file:old"              # current key resolves to None -> counts as a change
+fp._yapNoteFileChange(rfc)
+check(S, "file change clears stuck pause warning", rfc._pauseWarningActive is False)
+check(S, "file change does not re-arm on new file", rfc._pauseWarningDelayed is None)
+
+# same-file update must NOT clear an in-progress warning
+rfs = Room("pwsame", None); rfs._playState = Room.STATE_PAUSED
+rfs.yapStartPause("A"); rfs._pauseWarningActive = True
+rfs._yapCurrentFileKey = None                    # equals _getRoomFileKey(no file) -> no change
+fp._yapNoteFileChange(rfs)
+check(S, "same-file update keeps active warning", rfs._pauseWarningActive is True)
+
+# rewind-to-start while paused -> stale state dropped AND re-armed from now (mirrors the yap clock)
+rfr = Room("pwrewind", None); rfr._playState = Room.STATE_PAUSED
+rfr.yapStartPause("A"); rfr._pauseWarningActive = True
+fp._yapNoteRewind(rfr, 0.0)
+check(S, "rewind clears stuck pause warning", rfr._pauseWarningActive is False)
+check(S, "rewind re-arms threshold timer (still paused)",
+      rfr._pauseWarningDelayed is not None and rfr._pauseWarningDelayed.active())
+if rfr._pauseWarningDelayed is not None:
+    rfr._pauseWarningDelayed.cancel()            # don't leave a live DelayedCall on the reactor
+
+# rewind while playing -> clear, no phantom re-arm
+rfp = Room("pwplay", None); rfp._playState = Room.STATE_PLAYING
+rfp._pauseWarningActive = True
+fp._yapNoteRewind(rfp, 0.0)
+check(S, "rewind while playing clears and does not re-arm",
+      rfp._pauseWarningActive is False and rfp._pauseWarningDelayed is None)
+
+# feature off -> the hooks leave the pause-warning state untouched
+fp.pauseWarningAfter = 0
+rfo = Room("pwoff", None); rfo._playState = Room.STATE_PAUSED
+rfo.yapStartPause("A"); rfo._pauseWarningActive = True
+rfo._yapCurrentFileKey = "file:old"
+fp._yapNoteFileChange(rfo)
+check(S, "pause-warning disabled: file change leaves flag untouched", rfo._pauseWarningActive is True)
 
 # ---------------- Suite B: SyncFactory config & text ----------------
 S = "B:ConfigText"
