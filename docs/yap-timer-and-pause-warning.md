@@ -40,7 +40,7 @@ That's all — no client configuration exists or is needed.
 the player (cyan text) that updates every second while paused:
 
 ```
-Yap timer: 00:42 (total 12:52: 09:00 active / 03:52 AFK) — drag 21%
+Yap timer: 00:42 (total 12:52 - 09:00 active / 03:52 AFK) — drag 21%
 ```
 
 On resume, the overlay briefly shows the final tally and then hides:
@@ -58,8 +58,8 @@ already displays in the player OSD / chat area:
 
 ```
 <Alice> paused - yap timer running
-<Alice> still paused - 01:00 this pause (03:10 total: 02:10 active / 01:00 AFK) — drag 5%   (every 60 s)
-<Alice> unpaused - yapped for 02:34 (05:44 total this file: 04:44 active / 01:00 AFK) — drag 10%
+<Alice> still paused - 01:00 this pause (03:10 total - 02:10 active / 01:00 AFK) — drag 5%   (every 60 s)
+<Alice> unpaused - yapped for 02:34 (05:44 total this file - 04:44 active / 01:00 AFK) — drag 10%
 ```
 
 Messages are attributed to the user who paused. Clients older than 1.5.0
