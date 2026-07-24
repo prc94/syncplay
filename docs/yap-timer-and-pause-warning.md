@@ -22,8 +22,8 @@ Tracks how much time a room spends paused and shows it to everyone.
   time (paused while at least one person was away) — so you can tell real
   discussion apart from waiting on someone who stepped away.
 * **Drag ratio** — the per-file total expressed as a percentage of the current
-  file's runtime (`drag N%`), so you can see how much the film is being stretched
-  by pauses (`drag 25%` = a quarter of the runtime spent paused). Shown whenever
+  file's runtime (`N% drag`), so you can see how much the film is being stretched
+  by pauses (`25% drag` = a quarter of the runtime spent paused). Shown whenever
   the room knows the file's length; omitted if no one reports a duration.
 
 ### Enabling
@@ -40,13 +40,13 @@ That's all — no client configuration exists or is needed.
 the player (cyan text) that updates every second while paused:
 
 ```
-Yap timer: 00:42 (total 12:52: 09:00 active / 03:52 AFK) — drag 21%
+Yap timer: 00:42 (total 12:52 - 09:00 active / 03:52 AFK) — 21% drag
 ```
 
 On resume, the overlay briefly shows the final tally and then hides:
 
 ```
-Total yapped this file: 12:52 (09:00 active / 03:52 AFK) — drag 21%
+Total yapped this file: 12:52 (09:00 active / 03:52 AFK) — 21% drag
 ```
 
 The `active` and `AFK` figures always add up to the total; when nobody has been
@@ -58,8 +58,8 @@ already displays in the player OSD / chat area:
 
 ```
 <Alice> paused - yap timer running
-<Alice> still paused - 01:00 this pause (03:10 total: 02:10 active / 01:00 AFK) — drag 5%   (every 60 s)
-<Alice> unpaused - yapped for 02:34 (05:44 total this file: 04:44 active / 01:00 AFK) — drag 10%
+<Alice> still paused - 01:00 this pause (03:10 total - 02:10 active / 01:00 AFK) — 5% drag   (every 60 s)
+<Alice> unpaused - yapped for 02:34 (05:44 total this file - 04:44 active / 01:00 AFK) — 10% drag
 ```
 
 Messages are attributed to the user who paused. Clients older than 1.5.0

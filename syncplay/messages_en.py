@@ -516,11 +516,11 @@ en = {
     "afk-on-chat-message": "is now AFK - the pause-length warning is paused for this room", # Prefixed with <username>
     "afk-off-chat-message": "is no longer AFK", # Prefixed with <username>
     "yap-timer-paused-chat-message": "paused - yap timer running", # Prefixed with <username> who paused
-    "yap-timer-ongoing-chat-message": "still paused - {} this pause ({} total: {} active / {} AFK)", # Current pause duration, total pause time for file, active (nobody AFK) and AFK portions of the total
-    "yap-timer-unpaused-chat-message": "unpaused - yapped for {} ({} total this file: {} active / {} AFK)", # This pause duration, total pause time for file, active (nobody AFK) and AFK portions of the total
-    "yap-timer-osd-paused-message": "Yap timer: {} (total {}: {} active / {} AFK)", # Live overlay: current pause duration, total pause time for file, active (nobody AFK) and AFK portions of the total
+    "yap-timer-ongoing-chat-message": "still paused - {} this pause ({} total - {} active / {} AFK)", # Current pause duration, total pause time for file, active (nobody AFK) and AFK portions of the total
+    "yap-timer-unpaused-chat-message": "unpaused - yapped for {} ({} total this file - {} active / {} AFK)", # This pause duration, total pause time for file, active (nobody AFK) and AFK portions of the total
+    "yap-timer-osd-paused-message": "Yap timer: {} (total {} - {} active / {} AFK)", # Live overlay: current pause duration, total pause time for file, active (nobody AFK) and AFK portions of the total
     "yap-timer-osd-total-message": "Total yapped this file: {} ({} active / {} AFK)", # Overlay shown briefly on resume: total pause time for file, active (nobody AFK) and AFK portions
-    "yap-timer-drag-suffix": " — drag {}%", # Appended to the yap total lines: total pause time as a percentage of the current file's runtime. Omitted when the file duration is unknown
+    "yap-timer-drag-suffix": " — {}% drag", # Appended to the yap total lines: total pause time as a percentage of the current file's runtime. Omitted when the file duration is unknown
     "track-proposal-osd-message": "Operator {} recommends: audio {}, subtitles {}", # Admin username, audio description, sub description
     "server-trusted-domains-notification": "Added {} trusted domain(s) shared by {} for this session", # Count, admin username
     "pause-warning-default-message": "Paused for {} - please resume when ready", # Default --pause-warning-message; optional {} = pause duration
