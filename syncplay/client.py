@@ -1915,9 +1915,12 @@ class UiManager(object):
         dragSuffix = getMessage("yap-timer-drag-suffix").format(pct) if pct is not None else ""
         if paused:
             self._yapTimerWasPaused = True
-            text = getMessage("yap-timer-osd-paused-message").format(
-                utils.formatTime(current), utils.formatTime(total),
-                utils.formatTime(active), utils.formatTime(afkTotal)) + dragSuffix
+            # The overlay renders as two stacked rows: the live "Yap timer: <current>" line, then a
+            # detail line (total split + drag) beneath it. The separator is split back into rows lua-side.
+            detail = getMessage("yap-timer-osd-paused-detail-message").format(
+                utils.formatTime(total), utils.formatTime(active), utils.formatTime(afkTotal)) + dragSuffix
+            text = getMessage("yap-timer-osd-paused-message").format(utils.formatTime(current)) \
+                + constants.YAP_TIMER_OSD_ROW_SEPARATOR + detail
             self._client._player.updateYapTimerOSD(text)
         elif self._yapTimerWasPaused:
             self._yapTimerWasPaused = False

@@ -37,10 +37,12 @@ That's all — no client configuration exists or is needed.
 ### What users see
 
 **Updated clients using mpv, mpv.net, IINA or Memento** get a live overlay in
-the player (cyan text) that updates every second while paused:
+the player (cyan text) that updates every second while paused. The current
+pause is the main line, with the per-file total broken out on the row beneath:
 
 ```
-Yap timer: 00:42 (total 12:52 - 09:00 active / 03:52 AFK) — 21% drag
+Yap timer: 00:42
+(total 12:52 - 09:00 active / 03:52 AFK) — 21% drag
 ```
 
 On resume, the overlay briefly shows the final tally and then hides:
