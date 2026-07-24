@@ -747,13 +747,14 @@ class MainWindow(QtWidgets.QMainWindow):
     @needsClient
     def openPlaylistMenu(self, position):
         # Act on the item actually under the cursor: with a multi-item selection the first selected
-        # row is not necessarily the one right-clicked, so the per-item entries (open, add trusted
-        # domain, remove) would otherwise refer to a different file than the user pointed at.
+        # row is not necessarily the one right-clicked, so the item-specific entries (open, remove,
+        # add trusted domain) would otherwise refer to a different file than the user pointed at.
         item = self.playlist.indexAt(position)
         if not item.isValid():
             indexes = self.playlist.selectedIndexes()
             item = indexes[0] if indexes else None
         menu = QtWidgets.QMenu()
+        untrustedDomain = None  # domain of the clicked URL, offered in the trusted domains section below
 
         if item:
             firstFile = item.sibling(item.row(), 0).data()
@@ -768,9 +769,7 @@ class MainWindow(QtWidgets.QMainWindow):
                                getMessage('open-containing-folder'),
                                lambda: utils.open_system_file_browser(pathFound))
             if self._syncplayClient.isUntrustedTrustableURI(firstFile):
-                domain = utils.getDomainFromURL(firstFile)
-                if domain:
-                    menu.addAction(QtGui.QPixmap(resourcespath + "shield_add.png"), getMessage("addtrusteddomain-menu-label").format(domain), lambda: self.addTrustedDomain(domain))
+                untrustedDomain = utils.getDomainFromURL(firstFile)
             menu.addAction(QtGui.QPixmap(resourcespath + "delete.png"), getMessage("removefromplaylist-menu-label"), lambda: self.deleteSelectedPlaylistItems())
             menu.addSeparator()
         menu.addAction(QtGui.QPixmap(resourcespath + "arrow_switch.png"), getMessage("shuffleremainingplaylist-menu-label"), lambda: self.shuffleRemainingPlaylist())
@@ -785,6 +784,8 @@ class MainWindow(QtWidgets.QMainWindow):
         menu.addAction(getMessage("saveplaylisttofile-menu-label"),lambda: self.OpenSavePlaylistToFileDialog()) # TODO: Add icon
         menu.addSeparator()
         menu.addAction(QtGui.QPixmap(resourcespath + "film_folder_edit.png"), getMessage("setmediadirectories-menu-label"), lambda: self.openSetMediaDirectoriesDialog())
+        if untrustedDomain:
+            menu.addAction(QtGui.QPixmap(resourcespath + "shield_add.png"), getMessage("addtrusteddomain-menu-label").format(untrustedDomain), lambda domain=untrustedDomain: self.addTrustedDomain(domain))
         menu.addAction(QtGui.QPixmap(resourcespath + "shield_edit.png"), getMessage("settrusteddomains-menu-label"), lambda: self.openSetTrustedDomainsDialog())
         menu.exec_(self.playlist.viewport().mapToGlobal(position))
 
