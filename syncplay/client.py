@@ -642,7 +642,12 @@ class SyncplayClient(object):
         is a prefix of the given URI's path.
         A "trustable" URI is always "trusted" if the config onlySwitchToTrustedDomains is false.
         """
-        o = urlparse(URIToTest)
+        try:
+            o = urlparse(URIToTest)
+            hostname = o.hostname  # raises ValueError on a malformed IPv6 literal/port
+        except ValueError:
+            # not parseable as a URL, so it can never be trustable
+            return False, False
         trustable = o.scheme in constants.TRUSTABLE_WEB_PROTOCOLS
         if not trustable:
             # untrustable URIs are never trusted, return early
@@ -656,11 +661,11 @@ class SyncplayClient(object):
             for entry in effectiveTrustedDomains:
                 trustedDomain, _, path = entry.partition('/')
                 foundMatch = False
-                if o.hostname in (trustedDomain, "www." + trustedDomain):
+                if hostname in (trustedDomain, "www." + trustedDomain):
                     foundMatch = True
-                elif "*" in trustedDomain:
+                elif "*" in trustedDomain and hostname is not None:
                     wildcardRegex = "^("+re.escape(trustedDomain).replace("\\*","([^.]+)")+")$"
-                    wildcardMatch = bool(re.fullmatch(wildcardRegex, o.hostname, re.IGNORECASE))
+                    wildcardMatch = bool(re.fullmatch(wildcardRegex, hostname, re.IGNORECASE))
                     if wildcardMatch:
                         foundMatch = True
                 if not foundMatch:

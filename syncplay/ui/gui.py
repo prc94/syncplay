@@ -746,11 +746,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
     @needsClient
     def openPlaylistMenu(self, position):
-        indexes = self.playlist.selectedIndexes()
-        if len(indexes) > 0:
-            item = self.playlist.selectedIndexes()[0]
-        else:
-            item = None
+        # Act on the item actually under the cursor: with a multi-item selection the first selected
+        # row is not necessarily the one right-clicked, so the per-item entries (open, add trusted
+        # domain, remove) would otherwise refer to a different file than the user pointed at.
+        item = self.playlist.indexAt(position)
+        if not item.isValid():
+            indexes = self.playlist.selectedIndexes()
+            item = indexes[0] if indexes else None
         menu = QtWidgets.QMenu()
 
         if item:

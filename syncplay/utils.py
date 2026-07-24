@@ -461,14 +461,15 @@ def playlistIsValid(files):
 def getDomainFromURL(URL):
     try:
         o = urllib.parse.urlparse(URL)
+        hostname = o.hostname  # accessing this raises ValueError on a malformed IPv6 literal/port
     except ValueError:
         # not a URL
         return None
-    if o.hostname is not None and o.hostname.startswith("www."):
-        return o.hostname[4:]
+    if hostname is not None and hostname.startswith("www."):
+        return hostname[4:]
     else:
         # may return None if URL does not have domain (invalid url)
-        return o.hostname
+        return hostname
 
 
 def open_system_file_browser(path):
