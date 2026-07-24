@@ -484,9 +484,9 @@ cp._client = client_mock
 cp.sendMessage = lambda m: None
 cp.handleState({"ping": {"latencyCalculation": 0, "serverRtt": 0},
                 "playstate": {"position": 1, "paused": True, "setBy": "x"},
-                "yapTimer": {"paused": True, "current": 3.2, "total": 9.9, "afkTotal": 4.4},
+                "yapTimer": {"paused": True, "current": 3.2, "total": 9.9, "afkTotal": 4.4, "duration": 6000},
                 "pauseWarning": {"message": "W!"}})
-check(S, "client parses yapTimer field (incl. afkTotal split)", calls["yap"] == [(True, 3.2, 9.9, 4.4)], str(calls["yap"]))
+check(S, "client parses yapTimer field (incl. afkTotal split + duration)", calls["yap"] == [(True, 3.2, 9.9, 4.4, 6000)], str(calls["yap"]))
 check(S, "client parses pauseWarning field", calls["pw"] == [("W!",)], str(calls["pw"]))
 calls["yap"].clear(); calls["pw"].clear()
 cp.handleState({"ping": {"latencyCalculation": 0, "serverRtt": 0},
@@ -495,7 +495,7 @@ check(S, "no extras -> no UI calls (legacy server compat)", calls == {"yap": [],
 cp.handleState({"ping": {"latencyCalculation": 0, "serverRtt": 0},
                 "playstate": {"position": 1, "paused": True, "setBy": "x"},
                 "yapTimer": {}, "pauseWarning": {}})
-check(S, "malformed empty extras -> defaults, no crash", calls["yap"] == [(False, 0, 0, 0)] and calls["pw"] == [("",)])
+check(S, "malformed empty extras -> defaults, no crash", calls["yap"] == [(False, 0, 0, 0, None)] and calls["pw"] == [("",)])
 
 # ---------------- Suite E: i18n integrity ----------------
 S = "E:i18n"
