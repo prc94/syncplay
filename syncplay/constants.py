@@ -85,6 +85,7 @@ YAP_TIMER_REWIND_RESET_POSITION = 1.0  # Secs - a controller seek to at/below th
 ADMIN_COMMAND = "/admin"  # /admin <password> - authenticate as server admin
 LOCK_COMMAND = "/lock"  # Admin: lock the current plain room (only admins control playback)
 UNLOCK_COMMAND = "/unlock"  # Admin: unlock the current room
+TOGGLE_LOCK_COMMAND = "/togglelock"  # Admin: toggle the current plain room's lock (Ctrl+L keybind-driven)
 AFK_COMMAND = "/afk"  # Toggle AFK state (stock clients; modded clients intercept /afk locally)
 INFO_COMMAND = "/info"  # Report current server-side room/config state privately to the sender
 INFO_FULL_ARGUMENT = "full"  # /info full - also include server configuration (admins/operators)
@@ -104,6 +105,7 @@ MPV_PUBLISH_TRACKS_KEY = "Ctrl+t"  # Default hotkey; rebindable via script bindi
 MPV_APPLY_TRACKS_KEY = "Alt+t"  # Viewer hotkey to (re-)apply the recommendation; script binding "syncplay_apply_tracks"
 TRACK_PROPOSAL_OSD_POSITION = "bottom-center"  # Receipt notice placement (mirrored in syncplayintf.lua show_track_osd)
 TRACK_PROPOSAL_OSD_DURATION = 6.0  # Secs (mirrored in syncplayintf.lua show_track_osd)
+TRACK_CACHE_MAX_ENTRIES = 32  # Distinct layout signatures remembered per room (oldest evicted first; mirrored in syncplayintf.lua)
 
 # Generic OSD message channel (server -> capable clients; chat fallback for the rest)
 OSD_MESSAGE_COMMAND = "/osd"  # Chat prefix intercepted server-side (room operators and server admins)

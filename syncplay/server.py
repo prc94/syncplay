@@ -72,6 +72,10 @@ class SyncFactory(Factory):
             self.certPath = None
             self.options = None
             self.serverAcceptsTLS = False
+        # Per-room track-proposal cache: roomName -> {signature: proposal}. Runtime-only (not
+        # persisted to the rooms DB) but deliberately NOT cleared on room-empty, so a layout we
+        # have seen auto-reapplies to any later matching file without the admin re-publishing.
+        self._trackCache = {}
 
     def loadListFromMultilineTextFile(self, path):
         if not os.path.isfile(path):
@@ -155,7 +159,11 @@ class SyncFactory(Factory):
                 watcher.sendControlledRoomAuthStatus(True, controller, roomName)
         if watcher.isAdmin():
             self._broadcastAdminStatus(watcher)  # keep the operator icon in the new room
-        if room.getTrackProposal() is not None:
+        cachedProposals = self._cachedTrackProposals(roomName)
+        if watcher.supportsFeature("trackProposals") and cachedProposals:
+            for proposal in cachedProposals:  # hand the capable client the whole per-room layout cache
+                watcher.sendTrackProposal(proposal)
+        elif room.getTrackProposal() is not None:
             self._sendTrackProposalToWatcher(watcher, room.getTrackProposal())  # late joiners get the recommendation
         if room.getTrustedDomains() is not None:
             self._sendTrustedDomainsToWatcher(watcher, room.getTrustedDomains())  # late joiners get the domains
@@ -259,6 +267,12 @@ class SyncFactory(Factory):
                 return
             if command == constants.UNLOCK_COMMAND:
                 self._handleLockChatCommand(watcher, locked=False)
+                return
+            if command == constants.TOGGLE_LOCK_COMMAND:
+                # Ctrl+L in mpv (and typed /togglelock) - flip the room's lock. State lives
+                # server-side, so the toggle is resolved here (like /afk does for readiness).
+                room = watcher.getRoom()
+                self._handleLockChatCommand(watcher, locked=(room is None or not room.isLocked()))
                 return
             if command == constants.AFK_COMMAND:
                 # Reaches the server only from stock clients (modded clients intercept /afk
@@ -532,12 +546,28 @@ class SyncFactory(Factory):
             proposal["signature"] = signature[:constants.TRACK_PROPOSAL_MAX_SIGNATURE_LENGTH]
         if "audioId" not in proposal and "subId" not in proposal:
             return  # nothing usable to recommend
-        room.setTrackProposal(proposal)
+        room.setTrackProposal(proposal)  # "latest" pointer (fallback chat, description, immediate apply)
+        self._cacheTrackProposal(room.getName(), proposal)  # remember this layout for later matching files
         chatText = self._trackProposalChatText(proposal)
         for receiver in room.getWatchers():
             self._sendTrackProposalToWatcher(receiver, proposal, chatText)
         watcher.sendChatMessage({"message": getMessage("track-proposal-published-chat-message"),
                                  "username": watcher.getName()})
+
+    def _cacheTrackProposal(self, roomName, proposal):
+        # Store the proposal keyed by its layout signature so a later file with the same layout can
+        # auto-apply it. No signature -> nothing to key on (uncached; still works as the "latest").
+        signature = proposal.get("signature")
+        if not signature:
+            return
+        cache = self._trackCache.setdefault(roomName, {})
+        cache.pop(signature, None)  # re-insert so the newest keys sort last for FIFO eviction
+        cache[signature] = proposal
+        while len(cache) > constants.TRACK_CACHE_MAX_ENTRIES:
+            del cache[next(iter(cache))]  # evict the oldest layout
+
+    def _cachedTrackProposals(self, roomName):
+        return list(self._trackCache.get(roomName, {}).values())
 
     @staticmethod
     def _trackProposalChatText(proposal):
@@ -656,13 +686,27 @@ class SyncFactory(Factory):
 
     def _yapNoteFileChange(self, room):
         if self.yapTimer and room is not None:
-            room.yapResetIfFileChanged(self._getRoomFileKey(room))
+            if room.yapResetIfFileChanged(self._getRoomFileKey(room)) and self.pauseWarningAfter:
+                # The pause-warning threshold and OSD text are computed from the same pause clock the
+                # yap timer just reset (yapCurrentElapsed). A new file voids that clock, so drop any
+                # in-progress warning too - otherwise _pauseWarningActive stays stuck and the OSD
+                # lingers on the new file showing a sub-threshold duration. Unlike a rewind, the yap
+                # clock is not re-armed here (it waits for the next pause event), so neither is this.
+                self._stopPauseWarningTimer(room)
 
     def _yapNoteRewind(self, room, position):
         # A controller seeked the room back to (near) the start: reset the yap timer for the file.
         if self.yapTimer and room is not None and position is not None \
                 and position <= constants.YAP_TIMER_REWIND_RESET_POSITION:
             room.yapResetOnRewind()
+            # yapResetOnRewind re-armed a fresh pause clock (from 00:00) if the room is still paused.
+            # Keep the pause warning in lockstep: drop the stale over-threshold state and re-arm from
+            # now so the rewound pause must re-cross the threshold before it warns again.
+            if self.pauseWarningAfter:
+                if room.isPaused():
+                    self._startPauseWarningTimer(room)
+                else:
+                    self._stopPauseWarningTimer(room)
 
     def _yapNoteAfkPresence(self, room):
         # Tell the room's yap timer that its AFK presence may have changed, so the current
@@ -1313,6 +1357,8 @@ class Room(object):
         if fileKey != self._yapCurrentFileKey:
             self.yapReset()
             self._yapCurrentFileKey = fileKey
+            return True
+        return False
 
     def yapResetOnRewind(self):
         # A rewind to the very start replays the file, so wipe the per-file totals exactly like a

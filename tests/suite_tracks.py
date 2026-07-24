@@ -36,6 +36,7 @@ class FW:
     def sendTrackProposal(self, p): self.proposals.append(p)
 
 f = SyncFactory.__new__(SyncFactory)
+f._trackCache = {}  # per-room {signature: proposal} cache, populated by setTrackProposal
 room = Room("r", None)
 adm = FW("adm", admin=True, features={"trackProposals": True}); adm._room = room
 cap = FW("cap", features={"trackProposals": True}); cap._room = room
@@ -128,8 +129,76 @@ check("late joiner fallback: chat", len(lateFb.chats) == 1 and lateFb.proposals 
 room.setTrackProposal(None)
 check("cleanup clears proposal state", room.getTrackProposal() is None)
 
+# ---------- per-room layout cache (reapply the right proposal across episodes) ----------
+fc = SyncFactory.__new__(SyncFactory)
+fc._trackCache = {}
+crm = Room("cacheroom", None)
+adm2 = FW("adm2", admin=True, features={"trackProposals": True}); adm2._room = crm
+crm._watchers = {"adm2": adm2}
+sigA = "audio:1:eng|sub:1:eng"
+sigB = "audio:1:jpn|sub:1:eng"
+fc.setTrackProposal(adm2, {"audioId": 1, "signature": sigA})
+fc.setTrackProposal(adm2, {"audioId": 2, "subId": "no", "signature": sigB})
+check("cache keeps one proposal per distinct layout", len(fc._cachedTrackProposals("cacheroom")) == 2,
+      repr(fc._cachedTrackProposals("cacheroom")))
+fc.setTrackProposal(adm2, {"audioId": 5, "signature": sigA})  # re-publish for a known layout
+cached = fc._cachedTrackProposals("cacheroom")
+bySig = {p["signature"]: p for p in cached}
+check("re-publish same layout de-dupes + keeps newest", len(cached) == 2 and bySig[sigA]["audioId"] == 5, repr(cached))
+fc.setTrackProposal(adm2, {"audioId": 3})  # no signature
+check("signature-less proposal not cached", len(fc._cachedTrackProposals("cacheroom")) == 2)
+check("signature-less proposal still set as room's latest", crm.getTrackProposal()["audioId"] == 3)
+for i in range(constants.TRACK_CACHE_MAX_ENTRIES + 5):
+    fc.setTrackProposal(adm2, {"audioId": 1, "signature": "layout-%d" % i})
+evicted = fc._cachedTrackProposals("cacheroom")
+sigs = [p["signature"] for p in evicted]
+check("cache bounded to TRACK_CACHE_MAX_ENTRIES", len(evicted) == constants.TRACK_CACHE_MAX_ENTRIES, str(len(evicted)))
+check("oldest layouts evicted first (FIFO)",
+      "layout-0" not in sigs and ("layout-%d" % (constants.TRACK_CACHE_MAX_ENTRIES + 4)) in sigs, repr(sigs[-2:]))
+check("cache isolated per room", fc._cachedTrackProposals("otherroom") == [])
+
+# ---------- room switch hands a capable joiner the whole per-room cache ----------
+# Self-contained: prime a fresh factory/room with a known number of layouts so the assertion
+# does not depend on cache state left behind by the eviction loop above.
+fs = SyncFactory.__new__(SyncFactory)
+fs._trackCache = {}
+fs.roomsDbFile = None
+fs.maxUsernameLength = 150
+fs.setAfk = lambda w, v: None
+fs.sendJoinMessage = lambda w: None
+fs.sendRoomSwitchMessage = lambda w: None
+srm = Room("switchroom", None)
+admS = FW("admS", admin=True, features={"trackProposals": True}); admS._room = srm
+srm._watchers = {"admS": admS}
+NLAYOUTS = 3
+for i in range(NLAYOUTS):
+    fs.setTrackProposal(admS, {"audioId": 1, "signature": "switch-layout-%d" % i})
+class SwitchRM:
+    def moveWatcher(self, watcher, roomName):
+        watcher._room = srm  # join the primed room
+    def broadcast(self, *a, **k): pass
+    def broadcastRoom(self, *a, **k): pass
+fs._roomManager = SwitchRM()
+joiner = FW("joiner", features={"trackProposals": True}); joiner._room = srm
+joiner.setPlaylist = lambda *a: None
+joiner.setPlaylistIndex = lambda *a: None
+fs.setWatcherRoom(joiner, "switchroom")
+check("capable joiner receives every cached layout on room switch",
+      len(joiner.proposals) == NLAYOUTS, str(len(joiner.proposals)))
+
+# ---------- legacy (non-capable) joiner gets the room's latest proposal as chat, not the cache ----------
+legacyJoin = FW("legacyJoin", version="1.6.0"); legacyJoin._room = srm
+legacyJoin.file = {"name": "ep1.mkv"}
+legacyJoin.setPlaylist = lambda *a: None
+legacyJoin.setPlaylistIndex = lambda *a: None
+fs.setWatcherRoom(legacyJoin, "switchroom")
+check("legacy joiner: no Set payloads, single fallback chat for the latest proposal",
+      legacyJoin.proposals == [] and len(legacyJoin.chats) == 1 and "recommends tracks" in legacyJoin.chats[0],
+      repr(legacyJoin.chats))
+
 # ---------- /tracks legacy server notice + dispatcher ----------
 f2 = SyncFactory.__new__(SyncFactory)
+f2._trackCache = {}
 f2.adminPassword = "x"; f2.maxChatMessageLength = 150
 class RM:
     def broadcastRoom(self, sender, l):

@@ -4,6 +4,7 @@ import sys
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)  # import the repo's syncplay, not any system-installed copy
 import re, sys
+from syncplay import constants  # cache-size mirror assertions
 src = open(os.path.join(REPO_ROOT, "syncplay", "resources", "syncplayintf.lua")).read()
 lines = src.splitlines()
 ok_all = True
@@ -47,8 +48,10 @@ check("handler 'publish-tracks' registered", "mp.register_script_message('publis
 check("hotkey binding registered", "mp.add_key_binding(\"Ctrl+t\", \"syncplay_publish_tracks\", publish_tracks)" in src)
 check("file-loaded apply registration", 'mp.register_event("file-loaded"' in src and "apply_track_proposal(true)" in src)
 tp_apply = re.search(r"function apply_track_proposal\(.*?\nend\n", src, re.S).group(0)
-check("apply: signature gate present", "track_layout_signature()" in tp_apply and "~= track_proposal.signature" in tp_apply)
-check("apply: nil-guards (idle player / no proposal)", "if track_proposal == nil" in tp_apply and "signature == nil" in tp_apply)
+check("apply: layout gate via cache lookup", "track_layout_signature()" in tp_apply
+      and "proposal_for_current_file()" in tp_apply and 'return "mismatch"' in tp_apply)
+check("apply: nil-guards (empty cache / idle player / no match)", "#track_proposals == 0" in tp_apply
+      and "signature == nil" in tp_apply and "proposal == nil" in tp_apply)
 tp_pub = re.search(r"function publish_tracks\(.*?\nend\n", src, re.S).group(0)
 check("publish: no-file guard", "signature == nil" in tp_pub)
 check("publish: marker emit", "<SyncplayTrackProposal>" in tp_pub and "commandv" in tp_pub)
@@ -71,12 +74,61 @@ check("AFK keybind + handler registered",
       'mp.add_key_binding("Ctrl+a", "syncplay_toggle_afk", toggle_afk)' in src
       and "mp.register_script_message('toggle-afk'" in src
       and "<SyncplayToggleAfk>" in src)
+check("room-lock keybind + handler registered",
+      'mp.add_key_binding("Ctrl+l", "syncplay_toggle_room_lock", toggle_room_lock)' in src
+      and "mp.register_script_message('toggle-room-lock'" in src
+      and "<SyncplayToggleLock>" in src)
 kb = re.search(r"function apply_tracks_keybind\(.*?\nend\n", src, re.S).group(0)
 check("keybind explains none/idle/mismatch", all(s in kb for s in ('"none"', '"idle"', '"mismatch"')))
 check("apply returns status strings", all('return "%s"' % s in tp_apply for s in ("none", "idle", "mismatch", "applied")) or
       ('return "none"' in tp_apply and 'return "idle"' in tp_apply and 'return "mismatch"' in tp_apply and '"applied" or "empty"' in tp_apply))
-check("local track_proposal declared before use",
-      src.find("local track_proposal = nil") < src.find("if track_proposal == nil"))
+check("local track_proposals cache declared before use",
+      0 <= src.find("local track_proposals = {}") < src.find("function store_track_proposal"))
+# --- track proposal cache (store_track_proposal / proposal_for_current_file) ---
+check("cache max mirrors constants.TRACK_CACHE_MAX_ENTRIES",
+      "local TRACK_CACHE_MAX = {}".format(constants.TRACK_CACHE_MAX_ENTRIES) in src)
+store_body = re.search(r"function store_track_proposal\(.*?\nend\n", src, re.S).group(0)
+check("store: de-dupes by signature", "track_proposals[i].signature == payload.signature" in store_body
+      and "table.remove(track_proposals, i)" in store_body)
+check("store: FIFO eviction past cap", "> TRACK_CACHE_MAX" in store_body and "table.remove(track_proposals, 1)" in store_body)
+pfcf = re.search(r"function proposal_for_current_file\(.*?\nend\n", src, re.S).group(0)
+check("lookup: newest cached match wins (reverse scan)", "for i = #track_proposals, 1, -1 do" in pfcf
+      and "track_proposals[i].signature == signature" in pfcf)
+
+# Python port of the cache: de-dupe, FIFO eviction, newest-match-wins
+def make_cache():
+    return []
+def store(cache, payload):
+    # Mirror lua store_track_proposal: signature-less payloads skip de-dupe but are still appended,
+    # and .signature comparisons are nil-safe (lua reads a missing field as nil, never errors).
+    if payload.get("signature") is not None:
+        cache[:] = [p for p in cache if p.get("signature") != payload["signature"]]
+    cache.append(payload)
+    while len(cache) > constants.TRACK_CACHE_MAX_ENTRIES:
+        cache.pop(0)
+    return cache
+def lookup(cache, signature):
+    if signature is None:
+        return None
+    for p in reversed(cache):  # newest wins
+        if p.get("signature") == signature:
+            return p
+    return None
+c = make_cache()
+store(c, {"signature": "A", "audioId": 1})
+store(c, {"signature": "B", "audioId": 2})
+store(c, {"signature": "A", "audioId": 9})  # re-publish A
+check("port: re-publish same layout de-dupes, newest kept",
+      len(c) == 2 and lookup(c, "A")["audioId"] == 9, repr(c))
+for i in range(constants.TRACK_CACHE_MAX_ENTRIES + 5):
+    store(c, {"signature": "L%d" % i, "audioId": 1})
+check("port: cache bounded + oldest evicted first",
+      len(c) == constants.TRACK_CACHE_MAX_ENTRIES and lookup(c, "A") is None and lookup(c, "L0") is None
+      and lookup(c, "L%d" % (constants.TRACK_CACHE_MAX_ENTRIES + 4)) is not None, str(len(c)))
+check("port: idle player (nil signature) never matches", lookup(c, None) is None)
+store(c, {"audioId": 7})  # signature-less payload (lua appends these too); must not break lookup scans
+check("port: nil-safe scan past a signature-less entry",
+      lookup(c, "L%d" % (constants.TRACK_CACHE_MAX_ENTRIES + 4)) is not None)
 
 # Python port of track_layout_signature + apply decision
 def sig(tracks):
