@@ -502,7 +502,8 @@ S = "E:i18n"
 import syncplay.messages as M
 M.setLanguage("en")
 keys = ["yap-timer-paused-chat-message", "yap-timer-ongoing-chat-message", "yap-timer-unpaused-chat-message",
-        "yap-timer-osd-paused-message", "yap-timer-osd-total-message", "server-yap-timer-argument",
+        "yap-timer-osd-paused-message", "yap-timer-osd-paused-detail-message",
+        "yap-timer-osd-total-message", "server-yap-timer-argument",
         "pause-warning-default-message", "server-pause-warning-after-argument",
         "server-pause-warning-interval-argument", "server-pause-warning-message-argument"]
 for k in keys:
@@ -525,7 +526,8 @@ check(S, "translation fallback count = yap/pw keys * non-en langs",
       "{} missing vs {} keys * {} langs".format(n_missing, len(en_yap_pw_keys), n_langs))
 fmt_checks = [
     ("yap-timer-ongoing-chat-message", 4), ("yap-timer-unpaused-chat-message", 4),
-    ("yap-timer-osd-paused-message", 4), ("yap-timer-osd-total-message", 3),
+    ("yap-timer-osd-paused-message", 1), ("yap-timer-osd-paused-detail-message", 3),
+    ("yap-timer-osd-total-message", 3),
     ("pause-warning-default-message", 1),
 ]
 for k, n in fmt_checks:

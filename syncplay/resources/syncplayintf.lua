@@ -510,10 +510,15 @@ function process_yaptimer_osd()
     local stringToAdd = ""
     if yaptimer_osd ~= "" and last_yaptimer_osd_time ~= nil and mp.get_time() - last_yaptimer_osd_time < YAPTIMER_OSD_TIMEOUT then
         local messageColour = "{\\1c&H"..YAPTIMER_TEXT_COLOUR.."}"
-        local messageString = wordwrapify_string(yaptimer_osd)
-        messageString = messageColour..messageString
-        stringToAdd = format_chatroom(messageString)
-        rowsCreated = 1
+        -- The text may carry row separators (byte 0x1e, constants.YAP_TIMER_OSD_ROW_SEPARATOR) so the
+        -- "total" detail renders on its own line beneath the main timer. Each segment is its own row.
+        for segment in string.gmatch(yaptimer_osd.."\30", "(.-)\30") do
+            if segment ~= "" then
+                local messageString = messageColour..wordwrapify_string(segment)
+                stringToAdd = stringToAdd..format_chatroom(messageString)
+                rowsCreated = rowsCreated + 1
+            end
+        end
     end
     return rowsCreated, stringToAdd
 end

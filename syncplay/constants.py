@@ -80,6 +80,7 @@ SERVER_STATS_SNAPSHOT_INTERVAL = 3600
 YAP_TIMER_UPDATE_INTERVAL = 60  # Secs between server "still paused" yap-timer chat updates (fallback clients)
 YAP_TIMER_MAX_PAUSE = 3600  # Secs - after a single pause lasts this long, the yap timer and pause warning give up (reset + go quiet) until the next pause
 YAP_TIMER_REWIND_RESET_POSITION = 1.0  # Secs - a controller seek to at/below this position counts as "rewound to the start" and resets the yap timer for the file
+YAP_TIMER_OSD_ROW_SEPARATOR = "\x1e"  # ASCII record separator: splits the live yap overlay into stacked rows (main timer / total detail). Kept in sync with the literal "\30" in syncplayintf.lua's process_yaptimer_osd
 
 # Server-side chat commands (first-token match, intercepted in SyncFactory.sendChat)
 ADMIN_COMMAND = "/admin"  # /admin <password> - authenticate as server admin
