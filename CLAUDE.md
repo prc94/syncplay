@@ -16,7 +16,7 @@ the pause-tracking/OSD feature set; `feature/mgmt-overhaul` (branched from it) a
 and everything admin-driven. **The hard invariant of every fork feature: full interoperability with
 stock clients and servers** — new behavior is opt-in, feature-flagged, and always degrades to chat.
 
-### Fork features (docs in `docs/yap-timer-and-pause-warning.md` and `docs/server-admins.md`)
+### Fork features (docs in `docs/*.md`)
 - **Yap timer** (`--yap-timer`): tracks room pause time (current + per-file total), live mpv overlay.
 - **Pause warning** (`--pause-warning-after/-interval/-message`): blinking OSD after a long pause.
 - Both give up after a 1-hour pause (`YAP_TIMER_MAX_PAUSE`, sticky `_yapExpired` flag).
@@ -26,6 +26,10 @@ stock clients and servers** — new behavior is opt-in, feature-flagged, and alw
   controller authority everywhere, `/lock`//`/unlock` on plain rooms.
 - **Track proposals**: admin publishes recommended audio/sub tracks (Ctrl+T in mpv or `/tracks`),
   applied by layout-signature match, per-watcher chat reminders for legacy clients.
+- **Join position guard** (always on, no flag): a watcher only defines the room position while it
+  is demonstrably at it (`Watcher._positionEstablished`, `Room.getPositionReferences`); anyone
+  else is seeked to the room (`SyncFactory.pullWatcherIntoSync`) instead of dragging it to 00:00.
+  Fixes joins/rejoins/player restarts rewinding the room. Server-side, so stock clients get it too.
 
 ## Running & building
 
@@ -196,6 +200,7 @@ these patterns (they found real bugs every time):
   config: defaults/ini/CLI), `GuiConfiguration.py` (Qt settings dialog).
 - `syncplay/resources/syncplayintf.lua` — the mpv-side half of every mpv feature.
 - `syncplay/messages*.py` — i18n; `syncplay/constants.py` — all constants.
-- `docs/yap-timer-and-pause-warning.md`, `docs/server-admins.md` — fork feature docs.
+- `docs/yap-timer-and-pause-warning.md`, `docs/server-admins.md`, `docs/join-position-guard.md`
+  — fork feature docs.
 - `Dockerfile`/`.dockerignore` — server container; `ci/`, `buildPy2exe.py`, `buildPy2app.py`,
   `GNUmakefile` — packaging.

@@ -140,6 +140,8 @@ class SyncplayClient(object):
         self._lastGlobalUpdate = None
         self._globalPosition = 0.0
         self._globalPaused = 0.0
+        self._syncedWithRoomSinceConnect = False  # Cleared on (re)connect; set once our player has actually reached the room position
+        self._suppressSyncOnNextFileLoad = False  # A file deliberately opened at the start (playlist switch) must not be seeked to the room
         self._userOffset = 0.0
         self._speedChanged = False
         self.behindFirstDetected = None
@@ -246,6 +248,9 @@ class SyncplayClient(object):
         positionBeforeSeek = self._playerPosition
         self._playerPosition = position
         self._playerPaused = paused
+        if self._lastGlobalUpdate and self.userlist.currentUser.file \
+                and abs(position - self.getGlobalPosition()) <= constants.CLIENT_SYNC_ON_FILE_LOAD_THRESHOLD:
+            self._syncedWithRoomSinceConnect = True  # closes the join window: see _syncNewlyLoadedFileToRoom
         currentLength = self.userlist.currentUser.file["duration"] if self.userlist.currentUser.file else 0
         if pauseChange and paused and self._afkKeybindPausePending:
             # This pause is the AFK keybind stepping away, not a readiness action (nor a reason to
@@ -541,6 +546,27 @@ class SyncplayClient(object):
             self.ui.showDebugMessage("Fixing file duration to allow for playlist advancement")
             self.userlist.currentUser.file["duration"] = self._playerPosition
 
+    def _syncNewlyLoadedFileToRoom(self):
+        """Seek a file that has just finished loading to where the room already is.
+
+        Without this, a client that loads its file after joining sits at 00:00 while everyone else
+        is mid-playback - and since a server takes the *least* advanced watcher as the room
+        position, it drags the whole room back to the start with it. This fork's server pulls
+        newcomers into sync by itself, but stock servers do not, so do it locally too.
+
+        Only ever applies inside the join window (until our player has genuinely been in sync
+        once), so deliberately switching to another file mid-session is left alone.
+        """
+        suppressed, self._suppressSyncOnNextFileLoad = self._suppressSyncOnNextFileLoad, False
+        if suppressed or self._syncedWithRoomSinceConnect:
+            return
+        if not self._lastGlobalUpdate or not self._player or not self.userlist.currentUser.file:
+            return
+        globalPosition = self.getGlobalPosition()
+        if globalPosition - self.getPlayerPosition() > constants.CLIENT_SYNC_ON_FILE_LOAD_THRESHOLD:
+            self.ui.showDebugMessage("Seeking newly loaded file to the room position ({})".format(globalPosition))
+            self.setPosition(globalPosition)
+
     def updateFile(self, filename, duration, path):
         self.lastUpdatedFileTime = time.time()
         newPath = ""
@@ -561,6 +587,7 @@ class SyncplayClient(object):
         filename, size = self.__executePrivacySettings(filename, size)
         self.userlist.currentUser.setFile(filename, duration, size, path)
         self.sendFile()
+        self._syncNewlyLoadedFileToRoom()
         self.playlist.changeToPlaylistIndexFromFilename(filename)
 
     def setTrustedDomains(self, newTrustedDomains):
@@ -695,6 +722,8 @@ class SyncplayClient(object):
             return
 
         self.playlist.openedFile()
+        if resetPosition:
+            self._suppressSyncOnNextFileLoad = True  # starting this file from the beginning is the point
         self._player.openFile(filePath, resetPosition)
         if resetPosition:
             self.rewindFile()
@@ -893,6 +922,7 @@ class SyncplayClient(object):
 
     def connected(self):
         self.lastConnectTime = time.time()
+        self._syncedWithRoomSinceConnect = False  # reopens the join window: we may be nowhere near the room
         readyState = self._config['readyAtStart'] if self.userlist.currentUser.isReady() is None else self.userlist.currentUser.isReady()
         self._protocol.setReady(readyState, manuallyInitiated=False)
         self.reIdentifyAsController()
@@ -1030,6 +1060,7 @@ class SyncplayClient(object):
         This contains the common logic from the original retry function.
         """
         self._lastGlobalUpdate = None
+        self._syncedWithRoomSinceConnect = False
         self.ui.setSSLMode(False)
         self.playlistMayNeedRestoring = True
         self.ui.showMessage(getMessage("reconnection-attempt-notification"))
