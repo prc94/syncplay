@@ -31,6 +31,14 @@ def main():
                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         summary = [l for l in proc.stdout.splitlines() if "SUMMARY" in l]
         print(summary[-1] if summary else proc.stdout[-2000:])
+        if proc.returncode != 0:
+            # A failing suite still prints a summary line, so without this the actual [FAIL]
+            # lines never reach a CI log — which makes remote failures undiagnosable.
+            detail = [l for l in proc.stdout.splitlines() if "[FAIL]" in l or "Traceback" in l]
+            for line in detail[:40]:
+                print("  " + line)
+            if not detail:
+                print(proc.stdout[-3000:])
         results.append((suite, proc.returncode))
     print("\n===== OVERALL =====")
     failed = [s for s, rc in results if rc != 0]
