@@ -35,6 +35,8 @@ class FW:
     def isController(self): return self._admin
     def supportsFeature(self, ft): return self._features.get(ft, False)
     def getFile(self): return {"name": "f.mkv"}
+    def getPosition(self): return 0.0
+    def isPositionEstablished(self): return True  # settled watcher; see suite_joinguard.py
     def isReady(self): return self._ready
     def setReady(self, v): self._ready = v
     def isAfk(self): return self._afk

@@ -82,6 +82,14 @@ YAP_TIMER_MAX_PAUSE = 3600  # Secs - after a single pause lasts this long, the y
 YAP_TIMER_REWIND_RESET_POSITION = 1.0  # Secs - a controller seek to at/below this position counts as "rewound to the start" and resets the yap timer for the file
 YAP_TIMER_OSD_ROW_SEPARATOR = "\x1e"  # ASCII record separator: splits the live yap overlay into stacked rows (main timer / total detail). Kept in sync with the literal "\30" in syncplayintf.lua's process_yaptimer_osd
 
+# Join position guard (see docs/join-position-guard.md). A watcher only defines the room position
+# while it demonstrably sits at that position; anyone else is seeked to the room instead.
+JOIN_SYNC_TOLERANCE = 5.0  # Secs - how close to the room position a report must land to count as "in sync"
+JOIN_PULL_INTERVAL = 2.0  # Secs - minimum gap between the forced catch-up seeks sent to an out-of-sync watcher
+JOIN_PULL_GRACE = 15.0  # Secs - if nobody in the room is in sync and the stored position stays unreachable, accept the straggler's position after this long
+POSITION_TELEPORT_GUARD = 30.0  # Secs - a backwards jump larger than this, on an unchanged file and without a seek, is a player restart rather than playback
+CLIENT_SYNC_ON_FILE_LOAD_THRESHOLD = 5.0  # Secs - how far ahead the room must be for a client to seek a newly loaded file to the room position on join
+
 # Server-side chat commands (first-token match, intercepted in SyncFactory.sendChat)
 ADMIN_COMMAND = "/admin"  # /admin <password> - authenticate as server admin
 LOCK_COMMAND = "/lock"  # Admin: lock the current plain room (only admins control playback)

@@ -530,6 +530,11 @@ class SyncServerProtocol(JSONCommandProtocol):
     def isLogged(self):
         return self._logged
 
+    def hasOutstandingForcedUpdate(self):
+        # A forced state update is still waiting to be echoed back, so this client's own reports
+        # are being ignored: sending another one would only push the counters further apart.
+        return self.serverIgnoringOnTheFly != 0
+
     def meetsMinVersion(self, version):
         return self._version >= version
 
@@ -579,6 +584,11 @@ class SyncServerProtocol(JSONCommandProtocol):
             self._factory.addWatcher(self, username, roomName)
             self._logged = True
             self.sendHello(version)
+            # Watcher.setRoom already tried to seek this client to the room position, but that
+            # attempt was dropped: Watcher.sendState is gated on isLogged() and addWatcher runs
+            # before _logged is set. Retry it now for anyone whose player was already open on the
+            # file - the file has not been announced yet, hence requireFile=False.
+            self._factory.pullWatcherIntoSyncIfNeeded(self._watcher, requireFile=False)
 
     def persistentRoomWarning(self, clientFeatures, serverFeatures):
         serverPersistentRooms = serverFeatures["persistentRooms"]

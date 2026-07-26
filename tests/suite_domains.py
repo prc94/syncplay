@@ -30,6 +30,8 @@ class FW:
     def isAdmin(self): return self._admin
     def isController(self): return self._admin or self._controller
     def isAfk(self): return False
+    def getPosition(self): return 0.0
+    def isPositionEstablished(self): return True  # settled watcher; see suite_joinguard.py
     def getRoom(self): return self._room
     def supportsFeature(self, ft): return self._features.get(ft, False)
     def sendChatMessage(self, m, skipIfSupportsFeature=None):

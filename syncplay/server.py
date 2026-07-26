@@ -213,10 +213,36 @@ class SyncFactory(Factory):
             self._roomManager.broadcast(watcher, l)
             self._yapNoteFileChange(watcher.getRoom())
             self._remindTrackProposalOnFileChange(watcher)
+            # A file has just finished loading, which is the first moment the client is able to act
+            # on a seek - and for a newcomer it is the moment it would otherwise start reporting
+            # 00:00 at the rest of the room.
+            self.pullWatcherIntoSyncIfNeeded(watcher)
+
+    def pullWatcherIntoSyncIfNeeded(self, watcher, requireFile=True):
+        room = watcher.getRoom()
+        if room is None or watcher.isPositionEstablished():
+            return
+        if not room.hasPositionReference() and not room.positionIsMeaningful():
+            return  # a default-zero room: there is nothing to pull this watcher towards
+        self.pullWatcherIntoSync(watcher, room.estimatePosition(), requireFile)
+
+    def pullWatcherIntoSync(self, watcher, position, requireFile=True):
+        """Seek a watcher that is not yet in sync with its room to the room position.
+
+        Upstream only ever attempts this once, from Watcher.setRoom - and on a fresh connection
+        that attempt is silently thrown away, because SyncServerProtocol.handleHello does not mark
+        the connector as logged until after addWatcher has returned. Retry it whenever the watcher
+        is still adrift, so nothing has to fall back to dragging the room down to the newcomer.
+        """
+        if not watcher.canBePulledIntoSync(requireFile):
+            return
+        room = watcher.getRoom()
+        watcher.notePositionPull()
+        watcher.sendState(position, room.isPaused(), True, room.getSetBy(), True)
 
     def forcePositionUpdate(self, watcher, doSeek, watcherPauseState):
         room = watcher.getRoom()
-        if room.canControl(watcher):
+        if room.canControl(watcher) and watcher.isPositionEstablished():
             paused, position = room.isPaused(), watcher.getPosition()
             setBy = watcher
             if doSeek:
@@ -224,6 +250,14 @@ class SyncFactory(Factory):
             l = lambda w: w.sendState(position, paused, doSeek, setBy, True)
             room.setPosition(watcher.getPosition(), setBy)
             self._roomManager.broadcastRoom(watcher, l)
+        elif room.canControl(watcher):
+            # Entitled to control the room, but still catching up after a (re)join: let the pause
+            # propagate, never the position. Broadcasting a newcomer's 00:00 here is the other way
+            # the room used to get rewound (readiness toggles pause the room on join).
+            position = room.getPosition()
+            l = lambda w: w.sendState(position, room.isPaused(), False, room.getSetBy(), True)
+            self._roomManager.broadcastRoom(watcher, l)
+            self.pullWatcherIntoSyncIfNeeded(watcher)
         else:
             watcher.sendState(room.getPosition(), watcherPauseState, False, watcher, True)  # Fixes BC break with 1.2.x
             watcher.sendState(room.getPosition(), room.isPaused(), True, room.getSetBy(), True)
@@ -1182,6 +1216,7 @@ class Room(object):
         self._locked = False  # Locked by a server admin: only admins control playback/playlist. Runtime-only
         self._trackProposal = None  # Admin-recommended default audio/sub tracks (dict). Runtime-only
         self._trustedDomains = None  # Admin-published trusted domains for the room (dict). Runtime-only
+        self._positionIsMeaningful = False  # True once _position came from an in-sync watcher (or the rooms DB) rather than being a default zero
 
     def __str__(self, *args, **kwargs):
         return self.getName()
@@ -1224,26 +1259,53 @@ class Room(object):
         self._playlistIndex = playlistindex
         self._position = position
         self._lastSavedUpdate = lastupdate
+        self._positionIsMeaningful = True  # restored from the rooms DB: worth syncing newcomers to
 
     def getName(self):
         return self._name
 
-    def getPosition(self):
-        age = time.time() - self._lastUpdate
-        referenceWatchers = self._watchers
+    def _filterPositionReferences(self, candidates):
+        # A watcher may only define the room position while it is in sync with it (see
+        # docs/join-position-guard.md) - otherwise a newcomer still sitting at 00:00 becomes the
+        # min() below and drags the whole room back with it. The file/position checks mirror the
+        # ones Watcher.__lt__ has always made, applied up front so min() cannot return a watcher
+        # with nothing to contribute.
+        return {name: w for name, w in candidates.items()
+                if w.isPositionEstablished() and w.getFile() is not None and w.getPosition() is not None}
+
+    def getPositionReferences(self):
+        candidates = self._watchers
         if self._locked:
             # Locked room: only server admins are a valid position reference
-            referenceWatchers = {name: w for name, w in self._watchers.items() if w.isAdmin()}
-        if referenceWatchers and age > 1:
+            candidates = {name: w for name, w in self._watchers.items() if w.isAdmin()}
+        return self._filterPositionReferences(candidates)
+
+    def hasPositionReference(self):
+        return bool(self.getPositionReferences())
+
+    def positionIsMeaningful(self):
+        # Whether _position is somewhere newcomers should be pulled to, as opposed to the default
+        # zero of a room nobody has ever watched anything in.
+        return self._positionIsMeaningful
+
+    def estimatePosition(self):
+        # Where the room believes it is, without getPosition's side effects (that one rewrites
+        # _position/_lastUpdate, so it cannot be used to ask "where are we?" during state handling).
+        if self._position is None:
+            return 0
+        age = time.time() - self._lastUpdate
+        return self._position + (age if self._playState == self.STATE_PLAYING else 0)
+
+    def getPosition(self):
+        referenceWatchers = self.getPositionReferences()
+        if referenceWatchers and time.time() - self._lastUpdate > 1:
             watcher = min(referenceWatchers.values())
             self._setBy = watcher
             self._position = watcher.getPosition()
+            self._positionIsMeaningful = True
             self._lastSavedUpdate = self._lastUpdate = time.time()
             return self._position
-        elif self._position is not None:
-            return self._position + (age if self._playState == self.STATE_PLAYING else 0)
-        else:
-            return 0
+        return self.estimatePosition()
 
     def setPaused(self, paused=STATE_PAUSED, setBy=None):
         if not self.canControl(setBy):
@@ -1256,6 +1318,7 @@ class Room(object):
         if not self.canControl(setBy):
             return
         self._position = position
+        self._positionIsMeaningful = True  # somebody entitled to control put the room here
         for watcher in self._watchers.values():
             watcher.setPosition(position)
             self._setBy = setBy
@@ -1390,6 +1453,7 @@ class Room(object):
         watcher.setRoom(None)
         if not self._watchers and not self.isPersistent():
             self._position = 0
+            self._positionIsMeaningful = False  # back to a default zero: nothing left to sync newcomers to
         self.writeToDb()
 
     def isEmpty(self):
@@ -1444,22 +1508,23 @@ class ControlledRoom(Room):
         Room.__init__(self, name, roomsdbhandle)
         self._controllers = {}
 
-    def getPosition(self):
-        age = time.time() - self._lastUpdate
-        referenceWatchers = dict(self._controllers)
+    def getPositionReferences(self):
+        candidates = dict(self._controllers)
         for name, watcher in self._watchers.items():
             if watcher.isAdmin():
-                referenceWatchers[name] = watcher  # admins are implicit controllers
-        if referenceWatchers and age > 1:
+                candidates[name] = watcher  # admins are implicit controllers
+        return self._filterPositionReferences(candidates)
+
+    def getPosition(self):
+        referenceWatchers = self.getPositionReferences()
+        if referenceWatchers and time.time() - self._lastUpdate > 1:
             watcher = min(referenceWatchers.values())
             self._setBy = watcher
             self._position = watcher.getPosition()
+            self._positionIsMeaningful = True
             self._lastUpdate = time.time()
             return self._position
-        elif self._position is not None:
-            return self._position + (age if self._playState == self.STATE_PLAYING else 0)
-        else:
-            return 0
+        return self.estimatePosition()
 
     def addController(self, watcher):
         self._controllers[watcher.getName()] = watcher
@@ -1509,17 +1574,29 @@ class Watcher(object):
         self._position = None
         self._lastUpdatedOn = time.time()
         self._sendStateTimer = None
+        self._positionEstablished = False  # True once this watcher demonstrably sits at the room position (see docs/join-position-guard.md)
+        self._unsyncedSince = None  # When it first reported an out-of-sync position that we have been unable to correct
+        self._lastPositionPull = None  # Wall-clock time of the last catch-up seek we sent it
+        self._fileRevision = 0  # Bumped on every actual file change, so state handling can tell playback from a file switch
+        self._fileRevisionAtLastReport = 0
         self._connector.setWatcher(self)
         reactor.callLater(0.1, self._scheduleSendState)
 
     def setFile(self, file_):
         if file_ and "name" in file_:
             file_["name"] = truncateText(file_["name"], constants.MAX_FILENAME_LENGTH)
+        if file_ != self._file:
+            self._fileRevision += 1  # PublicRoomManager re-sets the same file on room moves; only real changes count
         self._file = file_
         self._server.sendFileUpdate(self)
 
     def setRoom(self, room):
         self._room = room
+        # Joining, rejoining or switching room: prove you are where the room is before you get to
+        # say where the room is.
+        self._positionEstablished = False
+        self._unsyncedSince = None
+        self._lastPositionPull = None
         if room is None:
             self._deactivateStateTimer()
         else:
@@ -1552,6 +1629,28 @@ class Watcher(object):
 
     def setPosition(self, position):
         self._position = position
+
+    def isPositionEstablished(self):
+        return self._positionEstablished
+
+    def establishPosition(self):
+        self._positionEstablished = True
+        self._unsyncedSince = None
+
+    def canBePulledIntoSync(self, requireFile=True):
+        if self._room is None or not self._connector.isLogged():
+            return False
+        if requireFile and self._file is None:
+            return False  # nothing loaded to seek: wait until it announces a file
+        if self._connector.hasOutstandingForcedUpdate():
+            # Never stack forced updates: each one bumps ignoringOnTheFly and the server stops
+            # accepting this client's reports until it echoes back that exact value.
+            return False
+        return self._lastPositionPull is None \
+            or time.time() - self._lastPositionPull >= constants.JOIN_PULL_INTERVAL
+
+    def notePositionPull(self):
+        self._lastPositionPull = time.time()
 
     def getPosition(self):
         if self._position is None:
@@ -1660,8 +1759,58 @@ class Watcher(object):
             position += messageAge
         return position
 
+    def _evaluatePositionSync(self, position, previousPosition, doSeek, fileChanged):
+        """Decide whether this watcher may act as the room's position reference.
+
+        A watcher that has just (re)joined - or whose player restarted mid-session - is not a
+        reference until it demonstrably sits at the room position, so a newcomer stuck at 00:00
+        can never drag everybody else back to the start. Anything still adrift gets seeked to the
+        room instead. See docs/join-position-guard.md.
+        """
+        room = self._room
+        if room is None or position is None or self._file is None:
+            return  # nothing loaded: Room._filterPositionReferences excludes it anyway
+        roomPosition = room.estimatePosition()
+        inSync = abs(position - roomPosition) <= constants.JOIN_SYNC_TOLERANCE
+
+        if self._positionEstablished:
+            if inSync or doSeek or fileChanged:
+                return  # a deliberate file switch legitimately restarts at 00:00 - stay a reference
+            teleported = previousPosition is not None \
+                and previousPosition - position > constants.POSITION_TELEPORT_GUARD
+            if not teleported:
+                return  # ordinary drift: upstream semantics, the room waits for the slowest watcher
+            # Jumped backwards on an unchanged file without seeking - that is a player restart
+            # rather than playback, so re-sync it before trusting it again.
+            self._positionEstablished = False
+            self._unsyncedSince = time.time()
+
+        if doSeek and room.canControl(self):
+            self.establishPosition()  # an explicit seek is intent; the room follows it
+            return
+        if inSync:
+            self.establishPosition()
+            return
+        if not room.hasPositionReference():
+            if not room.positionIsMeaningful():
+                self.establishPosition()  # nothing to sync to: this watcher defines the room
+                return
+            if self._unsyncedSince is None:
+                self._unsyncedSince = time.time()
+            if time.time() - self._unsyncedSince > constants.JOIN_PULL_GRACE:
+                # Nobody is in sync and the stored position stays out of reach (shorter or
+                # different file, persistent room restored against another release): stop fighting.
+                self.establishPosition()
+                return
+        elif self._unsyncedSince is None:
+            self._unsyncedSince = time.time()
+        self._server.pullWatcherIntoSync(self, roomPosition)
+
     def updateState(self, position, paused, doSeek, messageAge):
         pauseChanged = self.__hasPauseChanged(paused)
+        previousPosition = self.getPosition() if self._room is not None else None  # extrapolated with the *old* _lastUpdatedOn, so it must be read first
+        fileChanged = self._fileRevision != self._fileRevisionAtLastReport
+        self._fileRevisionAtLastReport = self._fileRevision
         self._lastUpdatedOn = time.time()
         if ((pauseChanged and not paused) or doSeek) and self._isAfk:
             # Returning to active watching clears AFK: unpausing or seeking - even a
@@ -1677,6 +1826,7 @@ class Watcher(object):
                 self._server.updatePauseWarning(self.getRoom(), paused, self)
         if position is not None:
             position = self._updatePositionByAge(messageAge, paused, position)
+            self._evaluatePositionSync(position, previousPosition, doSeek, fileChanged)
             self.setPosition(position)
         if doSeek or pauseChanged:
             self._server.forcePositionUpdate(self, doSeek, paused)

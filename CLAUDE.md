@@ -16,7 +16,7 @@ the pause-tracking/OSD feature set; `feature/mgmt-overhaul` (branched from it) a
 and everything admin-driven. **The hard invariant of every fork feature: full interoperability with
 stock clients and servers** — new behavior is opt-in, feature-flagged, and always degrades to chat.
 
-### Fork features (docs in `docs/yap-timer-and-pause-warning.md` and `docs/server-admins.md`)
+### Fork features (docs in `docs/*.md`)
 - **Yap timer** (`--yap-timer`): tracks room pause time (current + per-file total), live mpv overlay.
 - **Pause warning** (`--pause-warning-after/-interval/-message`): blinking OSD after a long pause.
 - Both give up after a 1-hour pause (`YAP_TIMER_MAX_PAUSE`, sticky `_yapExpired` flag).
@@ -26,11 +26,15 @@ stock clients and servers** — new behavior is opt-in, feature-flagged, and alw
   controller authority everywhere, `/lock`//`/unlock` on plain rooms.
 - **Track proposals**: admin publishes recommended audio/sub tracks (Ctrl+T in mpv or `/tracks`),
   applied by layout-signature match, per-watcher chat reminders for legacy clients.
+- **Join position guard** (always on, no flag): a watcher only defines the room position while it
+  is demonstrably at it (`Watcher._positionEstablished`, `Room.getPositionReferences`); anyone
+  else is seeked to the room (`SyncFactory.pullWatcherIntoSync`) instead of dragging it to 00:00.
+  Fixes joins/rejoins/player restarts rewinding the room. Server-side, so stock clients get it too.
 
 ## Running & building
 
 Upstream has **no test suite and no linter config**; CI (`.github/workflows/build.yml`) only builds
-installers. This fork is tested by external suites (see "Testing the fork" below).
+installers. This fork adds its own suites in `tests/` (see "Testing the fork" below).
 
 ```bash
 python3 syncplayClient.py           # GUI client (--no-gui for console)
@@ -150,10 +154,13 @@ must be cancelled in the room-empty cleanup and guarded against firing on emptie
 
 ## Testing the fork
 
-Suites currently live *outside the repo* (a Claude-session scratch dir) — if absent, rebuild from
+Suites live in `tests/` — `python3 tests/run_all.py` (`--unit-only` for the ~15 s path); see
+`tests/README.md`. **Every new fork feature or fix ships with its suite committed there**, following
 these patterns (they found real bugs every time):
 - **Unit style:** instantiate `Room`/`SyncFactory`/protocol classes directly (`__new__` + set the
-  few attrs needed); fake watchers implementing `getName/isAdmin/supportsFeature/sendChatMessage`;
+  few attrs needed); fake watchers implementing
+  `getName/isAdmin/supportsFeature/sendChatMessage/getPosition/isPositionEstablished` (the last two
+  are required by `Room.getPosition`'s reference filter — return `True` for a settled watcher);
   backdate `_yapPauseStartedAt`-style clocks instead of sleeping.
 - **E2E style:** boot the real `syncplayServer.py` as a subprocess and drive it with a
   protocol-faithful socket client (Hello → State pings; **echo `ignoringOnTheFly.server`** or your
@@ -196,6 +203,7 @@ these patterns (they found real bugs every time):
   config: defaults/ini/CLI), `GuiConfiguration.py` (Qt settings dialog).
 - `syncplay/resources/syncplayintf.lua` — the mpv-side half of every mpv feature.
 - `syncplay/messages*.py` — i18n; `syncplay/constants.py` — all constants.
-- `docs/yap-timer-and-pause-warning.md`, `docs/server-admins.md` — fork feature docs.
+- `docs/yap-timer-and-pause-warning.md`, `docs/server-admins.md`, `docs/join-position-guard.md`
+  — fork feature docs.
 - `Dockerfile`/`.dockerignore` — server container; `ci/`, `buildPy2exe.py`, `buildPy2app.py`,
   `GNUmakefile` — packaging.
