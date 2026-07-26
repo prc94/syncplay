@@ -117,7 +117,7 @@ assert pump_until([A, SW], lambda: sets_of(SW, "trustedDomains") and sets_of(SW,
 check(SCEN, "room switch delivers domains + proposal", len(sets_of(SW, "trustedDomains")) == 1
       and len(sets_of(SW, "trackProposal")) == 1)
 
-# --- after the room empties: layouts are remembered, domains are not (docs/server-admins.md) ---
+# --- after the room empties both layouts and domains are remembered (docs/server-admins.md) ---
 for c in (A, LC, LF, SW):
     c.close()
 time.sleep(1.2)  # let the server observe every disconnect and run its empty-room cleanup
@@ -132,12 +132,34 @@ check(SCEN, "next session's joiner still gets the remembered layout",
 check(SCEN, "remembered layout still arrives after the Hello",
       index_of_hello(FRESH) < index_of_set(FRESH, "trackProposal"),
       "hello@{} tracks@{}".format(index_of_hello(FRESH), index_of_set(FRESH, "trackProposal")))
-check(SCEN, "next session's joiner inherits no trusted domains", not sets_of(FRESH, "trustedDomains"),
-      repr(sets_of(FRESH, "trustedDomains")))
+check(SCEN, "next session's joiner still gets the remembered domains",
+      len(sets_of(FRESH, "trustedDomains")) == 1, repr(sets_of(FRESH, "trustedDomains")))
+check(SCEN, "remembered domains still arrive after the Hello",
+      index_of_hello(FRESH) < index_of_set(FRESH, "trustedDomains"),
+      "hello@{} domains@{}".format(index_of_hello(FRESH), index_of_set(FRESH, "trustedDomains")))
+gotD = sets_of(FRESH, "trustedDomains")
+check(SCEN, "remembered domains keep their payload and attribution",
+      gotD and gotD[0][1]["domains"] == ["example.com", "cdn.test"] and gotD[0][1]["by"] == "adm",
+      repr(gotD))
 FRESH.close()
 
 srv.clean_log(SCEN)
 srv.stop()
+
+# --- ...but neither cache outlives the server process ---
+srv2 = ServerBoot(19072, ["--admin-password", "S3cret", "--salt", "testsalt"])
+AFTER = MiniClient("afterRestart", "jp", "1.7.6", CAPABLE)
+AFTER.connect(19072)
+AFTER.t0 = time.time()
+assert pump_until([AFTER], lambda: AFTER.hello), "post-restart hello"
+pump_for([AFTER], 1.2)
+check(SCEN, "a server restart clears the remembered domains", not sets_of(AFTER, "trustedDomains"),
+      repr(sets_of(AFTER, "trustedDomains")))
+check(SCEN, "a server restart clears the remembered layouts", not sets_of(AFTER, "trackProposal"),
+      repr(sets_of(AFTER, "trackProposal")))
+AFTER.close()
+srv2.clean_log(SCEN)
+srv2.stop()
 
 fails = [x for x in RESULTS if not x[2]]
 print("\n===== JOINPROP E2E SUMMARY: {} checks, {} failed =====".format(len(RESULTS), len(fails)))

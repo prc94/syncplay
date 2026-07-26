@@ -76,6 +76,10 @@ class SyncFactory(Factory):
         # persisted to the rooms DB) but deliberately NOT cleared on room-empty, so a layout we
         # have seen auto-reapplies to any later matching file without the admin re-publishing.
         self._trackCache = {}
+        # Per-room trusted-domains cache: roomName -> proposal. Same lifetime rules as _trackCache -
+        # it outlives the room emptying (an ordinary Room object is destroyed at that point, so the
+        # room's own copy cannot) and dies with the process.
+        self._domainCache = {}
 
     def loadListFromMultilineTextFile(self, path):
         if not os.path.isfile(path):
@@ -151,6 +155,10 @@ class SyncFactory(Factory):
             self.sendRoomSwitchMessage(watcher)
 
         room = watcher.getRoom()
+        if room.getTrustedDomains() is None and roomName in self._domainCache:
+            # The room object is recreated from scratch once everyone has left, so restore the
+            # published domains onto it - this is what makes them outlive an empty room.
+            room.setTrustedDomains(self._domainCache[roomName])
         roomSetByName = room.getSetBy().getName() if room.getSetBy() else None
         watcher.setPlaylist(roomSetByName, room.getPlaylist())
         watcher.setPlaylistIndex(roomSetByName, room.getPlaylistIndex())
@@ -206,9 +214,11 @@ class SyncFactory(Factory):
                 self._stopPauseWarningTimer(room)
                 room.yapReset()
                 room.setTrackProposal(None)
-                room.setTrustedDomains(None)
-                # NB: _trackCache deliberately survives the room emptying (docs/server-admins.md) -
-                # remembering layouts across sessions is the point of it. Only a restart clears it.
+                # NB: _trackCache and _domainCache deliberately survive the room emptying
+                # (docs/server-admins.md) - remembering an admin's layouts and trusted domains
+                # across sessions is the point of them. Only a server restart clears them. The
+                # room's own copies go with the (destroyed) Room object; setWatcherRoom restores
+                # the domains from _domainCache when the room comes back.
             else:
                 self._yapNoteAfkPresence(room)  # an AFK watcher may have just left
             if self.roomsDbFile:
@@ -563,6 +573,7 @@ class SyncFactory(Factory):
             return
         proposal = {"domains": domains, "by": watcher.getName()}
         room.setTrustedDomains(proposal)
+        self._domainCache[room.getName()] = proposal  # remember it across the room emptying
         for receiver in room.getWatchers():
             self._sendTrustedDomainsToWatcher(receiver, proposal)
         watcher.sendChatMessage({"message": getMessage("domains-published-chat-message").format(len(domains)),

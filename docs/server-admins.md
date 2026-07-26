@@ -136,10 +136,15 @@ automatically, so there is no separate "share with new users" toggle.
 * **Legacy clients:** an informational chat line listing the domains (they can add them manually).
 
 Shared domains are **merged, never replacing** a user's own list, and are **dropped on disconnect**
-or when the room empties. This only affects clients that have "only switch to trusted domains"
-enabled.
+(on each client, they are session-only and never written to config). This only affects clients that
+have "only switch to trusted domains" enabled.
 
-**Delivery to joiners:** the server hands the room's published domains (and any remembered track
+Server-side the published list is remembered **per room**, on the same terms as the track cache: it
+**survives the room emptying**, so the next session in that room still gets the domains without an
+admin re-publishing, and it is held in memory only — a **server restart** clears it. Re-publishing
+replaces the room's entry (last write wins).
+
+**Delivery to joiners:** the server hands the room's remembered domains (and any remembered track
 layouts) to a joining client **after** its handshake reply, never before — a client resets its
 session-only copy of that state while processing the handshake, so anything delivered ahead of it
 would be silently discarded. Room switches are unaffected, since no handshake is involved.

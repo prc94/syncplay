@@ -41,6 +41,7 @@ class FW:
 
 f = SyncFactory.__new__(SyncFactory)
 f.maxChatMessageLength = 150
+f._domainCache = {}  # per-room cache that outlives the room; see suite_joinprop.py
 room = Room("r", None)
 adm = FW("adm", admin=True, features={"trustedDomains": True}); adm._room = room
 cap = FW("cap", features={"trustedDomains": True}); cap._room = room
