@@ -78,4 +78,5 @@ jobs:
           grep -E '\[FAIL\]|^  FAIL|Traceback' suites.log | head -40 | while IFS= read -r line; do
             echo "::error::${line}"
           done
+          echo "::notice::env $(python3 -V) | $(pip freeze | grep -iE '^(twisted|cryptography|pyopenssl|service-identity|attrs|certifi|pem)==' | tr '\n' ' ')"
           exit 1
