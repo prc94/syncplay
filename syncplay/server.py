@@ -111,6 +111,7 @@ class SyncFactory(Factory):
         features["setOthersReadiness"] = True
         features["serverAdmin"] = self.adminPassword is not None
         features["afk"] = True
+        features["setOthersAfk"] = True
 
         return features
 
@@ -334,7 +335,14 @@ class SyncFactory(Factory):
             if command == constants.AFK_COMMAND:
                 # Reaches the server only from stock clients (modded clients intercept /afk
                 # locally and toggle via Set:afk) - toggle for them so anyone can use it.
-                self.setAfk(watcher, not watcher.isAfk())
+                # An argument names another user to toggle instead; the toggle is resolved
+                # server-side against the target's current state, so there is no stale-view race.
+                parts = message.split(" ", 1)
+                targetName = parts[1].strip() if len(parts) > 1 else None
+                if targetName and targetName != watcher.getName():
+                    self._handleAfkChatCommand(watcher, targetName)
+                else:
+                    self.setAfk(watcher, not watcher.isAfk())
                 return
             if command == constants.INFO_COMMAND:
                 parts = message.split(" ", 1)
@@ -856,7 +864,25 @@ class SyncFactory(Factory):
         for receiver in room.getWatchers():
             receiver.sendChatMessage(messageDict, skipIfSupportsFeature="pauseWarning")
 
-    def setAfk(self, watcher, isAfk):
+    def setAfk(self, watcher, isAfk, username=None):
+        # With a username naming someone else, sets that user's AFK state instead - gated on
+        # room control authority exactly like setReady's set-others path.
+        if username and username != watcher.getName():
+            room = watcher.getRoom()
+            if room is None:
+                return
+            if not room.canControl(watcher):
+                watcher.sendChatMessage({"message": getMessage("cannot-set-others-afk-error-chat-message"),
+                                         "username": watcher.getName()})
+                return
+            for watcherToSet in room.getWatchers():
+                if watcherToSet.getName() == username:
+                    self._applyAfk(watcherToSet, isAfk, setBy=watcher)
+                    return
+            return
+        self._applyAfk(watcher, isAfk)
+
+    def _applyAfk(self, watcher, isAfk, setBy=None):
         # AFK is per-connection like admin status. Going AFK also forces not-ready (directly, not
         # via setReady - its manual-change hook would instantly clear the AFK state again);
         # returning does not auto-restore ready.
@@ -867,17 +893,38 @@ class SyncFactory(Factory):
         room = watcher.getRoom()
         if room is None:
             return
-        messageKey = "afk-on-chat-message" if isAfk else "afk-off-chat-message"
-        messageDict = {"message": getMessage(messageKey), "username": watcher.getName()}
+        setByName = setBy.getName() if setBy is not None else None
+        if setByName:
+            messageKey = "set-others-afk-chat-message" if isAfk else "set-others-not-afk-chat-message"
+            messageDict = {"message": getMessage(messageKey).format(watcher.getName()), "username": setByName}
+        else:
+            messageKey = "afk-on-chat-message" if isAfk else "afk-off-chat-message"
+            messageDict = {"message": getMessage(messageKey), "username": watcher.getName()}
         for receiver in room.getWatchers():
             if receiver.supportsFeature("afk"):
-                receiver.sendSetAfk(watcher.getName(), isAfk)
+                receiver.sendSetAfk(watcher.getName(), isAfk, setByName)
             else:
                 receiver.sendChatMessage(messageDict)
         if isAfk and not self.disableReady and watcher.isReady() is not False:
             watcher.setReady(False)
             self._roomManager.broadcastRoom(watcher, lambda w: w.sendSetReady(watcher.getName(), False, False))
         self._yapNoteAfkPresence(room)  # AFK presence flipped: split the current pause accordingly
+
+    def _handleAfkChatCommand(self, watcher, targetName):
+        # /afk <username> from a stock client: toggle the named user's AFK state.
+        # setAfk re-checks control authority; here we only need the target's current state.
+        room = watcher.getRoom()
+        target = None
+        if room is not None:
+            for w in room.getWatchers():
+                if w.getName() == targetName:
+                    target = w
+                    break
+        if target is None:
+            watcher.sendChatMessage({"message": getMessage("afk-user-not-found-error-chat-message").format(targetName),
+                                     "username": watcher.getName()})
+            return
+        self.setAfk(watcher, not target.isAfk(), username=targetName)
 
     def _broadcastAfkToRoom(self, watcher):
         # Join/room-switch resync (mirrors the sendSetReady rebroadcast): fixes stale AFK views
@@ -1732,8 +1779,8 @@ class Watcher(object):
     def sendSetReady(self, username, isReady, manuallyInitiated=True, setByUsername=None):
         self._connector.sendSetReady(username, isReady, manuallyInitiated, setByUsername)
 
-    def sendSetAfk(self, username, isAfk):
-        self._connector.sendSetAfk(username, isAfk)
+    def sendSetAfk(self, username, isAfk, setBy=None):
+        self._connector.sendSetAfk(username, isAfk, setBy)
 
     def setPlaylistIndex(self, username, index):
         self._connector.setPlaylistIndex(username, index)

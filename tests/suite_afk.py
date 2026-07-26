@@ -41,7 +41,8 @@ class FW:
     def setReady(self, v): self._ready = v
     def isAfk(self): return self._afk
     def setAfk(self, v): self._afk = v
-    def sendSetAfk(self, username, isAfk): self.afkSets.append((username, isAfk))
+    def sendSetAfk(self, username, isAfk, setBy=None):
+        self.afkSets.append((username, isAfk) if setBy is None else (username, isAfk, setBy))
     def sendSetReady(self, username, isReady, manuallyInitiated=True, setByUsername=None):
         self.readyBroadcasts.append((username, isReady, manuallyInitiated))
     def sendChatMessage(self, m, skipIfSupportsFeature=None):
@@ -264,7 +265,7 @@ routed = []
 sp2 = SyncServerProtocol.__new__(SyncServerProtocol)
 sp2._logged = True
 sp2._watcher = FW("hs", {"afk": True})
-sp2._factory = types.SimpleNamespace(setAfk=lambda w, v: routed.append((w.getName(), v)))
+sp2._factory = types.SimpleNamespace(setAfk=lambda w, v, username=None: routed.append((w.getName(), v)))
 sp2.handleSet({"afk": {"isAfk": 1}})
 check("server handleSet afk branch coerces to bool", routed == [("hs", True)], repr(routed))
 routed.clear()
@@ -505,6 +506,174 @@ try:
 except Exception as e:
     gui_detail = "offscreen construction failed: {}: {}".format(type(e).__name__, e)
 check("GUI: offscreen MainWindow ready/AFK radio + delegate", gui_ok, gui_detail)
+
+# ---------- setOthersAfk: targeted AFK changes (mirrors setOthersReadiness) ----------
+fo = make_factory()
+setter = FW("setter", {"afk": True})
+tgt2 = FW("tgt2", {"afk": True}); tgt2._ready = True
+legobs = FW("legobs", {})
+oroom = make_room("o", (setter, tgt2, legobs))
+for w in (setter, tgt2, legobs): w.clear()
+fo.setAfk(setter, True, username="tgt2")
+check("targeted set: target marked AFK", tgt2.isAfk() is True)
+check("targeted set: capable peers get Set:afk carrying setBy",
+      ("tgt2", True, "setter") in setter.afkSets and ("tgt2", True, "setter") in tgt2.afkSets,
+      repr((setter.afkSets, tgt2.afkSets)))
+check("targeted set: legacy peer gets setter-attributed chat",
+      any("has marked" in c and "tgt2" in c for c in legobs.chats), repr(legobs.chats))
+check("targeted set: target forced not-ready",
+      tgt2._ready is False and ("tgt2", False, False) in setter.readyBroadcasts, repr(setter.readyBroadcasts))
+
+for w in (setter, tgt2, legobs): w.clear()
+fo.setAfk(setter, False, username="tgt2")
+check("targeted clear: target no longer AFK, setBy still carried",
+      tgt2.isAfk() is False and ("tgt2", False, "setter") in tgt2.afkSets, repr(tgt2.afkSets))
+check("targeted clear: legacy peer chat names the target",
+      any("no longer AFK" in c and "tgt2" in c for c in legobs.chats), repr(legobs.chats))
+
+# username naming yourself routes through the plain self path (no setBy on the wire)
+for w in (setter, tgt2, legobs): w.clear()
+fo.setAfk(setter, True, username="setter")
+check("targeted set on self behaves as self-toggle (no setBy)",
+      setter.isAfk() is True and ("setter", True) in tgt2.afkSets, repr(tgt2.afkSets))
+fo.setAfk(setter, False)
+
+# missing target: silent no-op (mirrors setReady), nothing broadcast
+for w in (setter, tgt2, legobs): w.clear()
+fo.setAfk(setter, True, username="ghost")
+check("targeted set on missing user: silent no-op",
+      setter.afkSets == [] and tgt2.afkSets == [] and legobs.chats == [],
+      repr((setter.afkSets, legobs.chats)))
+
+# locked plain room: non-admins are refused with a private error, admins pass
+oroom.setLocked(True)
+for w in (setter, tgt2, legobs): w.clear()
+fo.setAfk(setter, True, username="tgt2")
+check("locked room, non-admin: target unchanged", tgt2.isAfk() is False)
+check("locked room, non-admin: private error to setter only",
+      any("not authorised" in c for c in setter.chats) and tgt2.chats == [] and legobs.chats == [],
+      repr((setter.chats, legobs.chats)))
+adminW = FW("adm", {"afk": True}, admin=True)
+oroom._watchers["adm"] = adminW; adminW._room = oroom
+for w in (setter, tgt2, legobs, adminW): w.clear()
+fo.setAfk(adminW, True, username="tgt2")
+check("locked room, admin: targeted set works",
+      tgt2.isAfk() is True and ("tgt2", True, "adm") in tgt2.afkSets, repr(tgt2.afkSets))
+oroom.setLocked(False)
+fo.setAfk(adminW, False, username="tgt2")
+
+# /afk <name> chat command (stock-client surface): toggle resolved server-side
+fchat = make_factory()
+sctl = FW("sctl", {})
+stgt = FW("stgt", {})
+chroom = make_room("ch", (sctl, stgt))
+for w in (sctl, stgt): w.clear()
+fchat.sendChat(sctl, "/afk stgt")
+check("/afk <name> chat: toggles the target AFK", stgt.isAfk() is True and sctl.isAfk() is False)
+check("/afk <name> chat: room got setter-attributed chat",
+      any("has marked" in c and "stgt" in c for c in stgt.chats), repr(stgt.chats))
+fchat.sendChat(sctl, "/afk stgt")
+check("/afk <name> chat: second call toggles back off", stgt.isAfk() is False)
+for w in (sctl, stgt): w.clear()
+fchat.sendChat(sctl, "/afk ghost")
+check("/afk <unknown> chat: private not-found error, sender untouched",
+      any("no user called" in c for c in sctl.chats) and stgt.chats == [] and sctl.isAfk() is False,
+      repr(sctl.chats))
+for w in (sctl, stgt): w.clear()
+fchat.sendChat(sctl, "/afk sctl")
+check("/afk <own name> chat: plain self-toggle", sctl.isAfk() is True)
+fchat.sendChat(sctl, "/afk sctl")
+
+# protocol payload shapes for the targeted variants
+out3 = []
+cp2 = SyncClientProtocol.__new__(SyncClientProtocol)
+cp2.sendMessage = lambda m: out3.append(m)
+cp2.setAfk(True, "bob")
+check("client targeted setAfk payload includes username",
+      out3 == [{"Set": {"afk": {"isAfk": True, "username": "bob"}}}], repr(out3))
+
+out4 = []
+sp3 = SyncServerProtocol.__new__(SyncServerProtocol)
+sp3.sendMessage = lambda m: out4.append(m)
+sp3.sendSetAfk("alice", True, "bob")
+check("server sendSetAfk payload includes setBy",
+      out4 == [{"Set": {"afk": {"username": "alice", "isAfk": True, "setBy": "bob"}}}], repr(out4))
+out4.clear()
+sp3.sendSetAfk("alice", True)
+check("server sendSetAfk without setBy keeps the legacy shape",
+      out4 == [{"Set": {"afk": {"username": "alice", "isAfk": True}}}], repr(out4))
+
+routed2 = []
+sp4 = SyncServerProtocol.__new__(SyncServerProtocol)
+sp4._logged = True
+sp4._watcher = FW("hs2", {"afk": True})
+sp4._factory = types.SimpleNamespace(setAfk=lambda w, v, username=None: routed2.append((w.getName(), v, username)))
+sp4.handleSet({"afk": {"isAfk": True, "username": "bob"}})
+check("server handleSet passes username through", routed2 == [("hs2", True, "bob")], repr(routed2))
+
+routed3 = []
+ccp = SyncClientProtocol.__new__(SyncClientProtocol)
+ccp._client = types.SimpleNamespace(setAfk=lambda u, a, s=None: routed3.append((u, a, s)))
+ccp.handleSet({"afk": {"username": "alice", "isAfk": True, "setBy": "bob"}})
+check("client handleSet passes setBy through", routed3 == [("alice", True, "bob")], repr(routed3))
+routed3.clear()
+ccp.handleSet({"afk": {"username": "alice", "isAfk": True}})
+check("client handleSet tolerates missing setBy", routed3 == [("alice", True, None)], repr(routed3))
+
+# client-side notification wording for targeted changes
+def client_setAfk_msgs(target, setBy):
+    c = SyncplayClient.__new__(SyncplayClient)
+    msgs = []
+    cu = SyncplayUser("me", "d")
+    c.userlist = types.SimpleNamespace(currentUser=cu, isAfk=lambda n: False,
+                                       setAfk=lambda n, v: None, isRoomSame=lambda r: True,
+                                       getUserRoom=lambda n: "d")
+    c.ui = types.SimpleNamespace(showMessage=lambda m: msgs.append(m), userListChange=lambda: None)
+    c.setAfk(target, True, setBy)
+    return msgs
+
+m1 = client_setAfk_msgs("me", "adm")
+check("client notification: you marked AFK by another -> names the setter",
+      m1 and "marked as AFK by" in m1[0] and "adm" in m1[0], repr(m1))
+m2 = client_setAfk_msgs("alice", "adm")
+check("client notification: other marked AFK -> names target and setter",
+      m2 and "alice" in m2[0] and "adm" in m2[0], repr(m2))
+m3 = client_setAfk_msgs("alice", None)
+check("client notification: no setBy keeps the classic message",
+      m3 and "is now AFK" in m3[0], repr(m3))
+m4 = client_setAfk_msgs("alice", "alice")
+check("client notification: setBy == target treated as self-toggle wording",
+      m4 and "is now AFK" in m4[0], repr(m4))
+
+# setOthersAfk client call is gated on its own server feature
+def run_setOthersAfk(features):
+    c = SyncplayClient.__new__(SyncplayClient)
+    c.serverVersion = "1.7.6"
+    c.serverFeatures = features
+    sent = []
+    c._protocol = types.SimpleNamespace(setAfk=lambda v, u=None: sent.append((v, u)))
+    c.ui = types.SimpleNamespace(showErrorMessage=lambda m: sent.append(("err", m)))
+    c.setOthersAfk("bob", True)
+    return sent
+
+check("setOthersAfk sends targeted Set when server supports it",
+      run_setOthersAfk({"afk": True, "setOthersAfk": True}) == [(True, "bob")],
+      repr(run_setOthersAfk({"afk": True, "setOthersAfk": True})))
+gated = run_setOthersAfk({"afk": True})  # older fork server: afk but no setOthersAfk
+check("setOthersAfk refused when server lacks the flag (never a self-toggle)",
+      gated and gated[0][0] == "err", repr(gated))
+
+# feature advertisement
+check("server featureList advertises setOthersAfk=True", feats.get("setOthersAfk") is True,
+      repr(feats.get("setOthersAfk")))
+
+# i18n for the new keys
+for k in ["set-afk-by-other-notification", "set-not-afk-by-other-notification",
+          "other-set-afk-notification", "other-set-not-afk-notification",
+          "set-others-afk-chat-message", "set-others-not-afk-chat-message",
+          "cannot-set-others-afk-error-chat-message", "afk-user-not-found-error-chat-message",
+          "feature-setOthersAfk", "setasafk-menu-label", "setasnotafk-menu-label"]:
+    check("en key: " + k, k in M.messages["en"])
 
 # ---------- constants ----------
 check("COMMANDS_AFK present", constants.COMMANDS_AFK == ["afk"])

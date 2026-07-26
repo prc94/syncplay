@@ -64,6 +64,10 @@ en = {
     "set-as-not-afk-notification": "You are no longer AFK",
     "other-afk-notification": "{} is now AFK",  # User
     "other-not-afk-notification": "{} is no longer AFK",  # User
+    "set-afk-by-other-notification": "You have been marked as AFK by {}",  # User who set it
+    "set-not-afk-by-other-notification": "You have been marked as no longer AFK by {}",  # User who set it
+    "other-set-afk-notification": "{} has been marked as AFK by {}",  # User, user who set it
+    "other-set-not-afk-notification": "{} has been marked as no longer AFK by {}",  # User, user who set it
     "autoplaying-notification": "Auto-playing in {}...",  # Number of seconds until playback will start
 
     "identifying-as-controller-notification": "Identifying as room operator with password '{}'...",
@@ -111,7 +115,7 @@ en = {
     "commandlist-notification/offset": "\to[+-]duration - offset local playback by the given duration (in seconds or min:sec) from the server seek position - this is a deprecated feature",
     "commandlist-notification/help": "\th - this help",
     "commandlist-notification/toggle": "\tt - toggles whether you are ready to watch or not",
-    "commandlist-notification/afk": "\tafk - toggles your AFK status (pauses the pause-length warning, sets you as not ready)",
+    "commandlist-notification/afk": "\tafk [name] - toggles your AFK status, or another user's if a name is given (pauses the pause-length warning, sets them as not ready)",
     "commandlist-notification/info": "\tinfo - shows current server-side room state (info full also shows server config for admins)",
     "commandlist-notification/setready": "\tsr [name] - sets user as ready",
     "commandlist-notification/setnotready": "\tsn [name] - sets user as not ready",
@@ -178,6 +182,7 @@ en = {
     "feature-managedRooms": "managed rooms",  # used for not-supported-by-server-error
     "feature-setOthersReadiness": "readiness override",  # used for not-supported-by-server-error
     "feature-afk": "AFK status",  # used for not-supported-by-server-error
+    "feature-setOthersAfk": "AFK override",  # used for not-supported-by-server-error
 
     "not-supported-by-server-error": "The {} feature is not supported by this server..",  # feature
     "shared-playlists-not-supported-by-server-error": "The shared playlists feature may not be supported by the server. To ensure that it works correctly requires a server running Syncplay  {}+, but the server is running Syncplay {}.",  # minVersion, serverVersion
@@ -515,6 +520,10 @@ en = {
     "not-ready-chat-message": "I have set {} as not ready.", # User
     "afk-on-chat-message": "is now AFK - the pause-length warning is paused for this room", # Prefixed with <username>
     "afk-off-chat-message": "is no longer AFK", # Prefixed with <username>
+    "set-others-afk-chat-message": "has marked {} as AFK - the pause-length warning is paused for this room", # Target user; prefixed with <username> who set it
+    "set-others-not-afk-chat-message": "has marked {} as no longer AFK", # Target user; prefixed with <username> who set it
+    "cannot-set-others-afk-error-chat-message": "You are not authorised to change other users' AFK state in this room.",
+    "afk-user-not-found-error-chat-message": "Cannot change AFK state: no user called '{}' is in your room.", # Target user
     "yap-timer-paused-chat-message": "paused - yap timer running", # Prefixed with <username> who paused
     "yap-timer-ongoing-chat-message": "still paused - {} this pause ({} total - {} active / {} AFK)", # Current pause duration, total pause time for file, active (nobody AFK) and AFK portions of the total
     "yap-timer-unpaused-chat-message": "unpaused - yapped for {} ({} total this file - {} active / {} AFK)", # This pause duration, total pause time for file, active (nobody AFK) and AFK portions of the total
@@ -634,6 +643,8 @@ en = {
 
     "setasready-menu-label": "Set {} as ready", # [Username]
     "setasnotready-menu-label": "Set {} as not ready", # [Username]
+    "setasafk-menu-label": "Set {} as AFK", # [Username]
+    "setasnotafk-menu-label": "Set {} as no longer AFK", # [Username]
 
     "playlist-instruction-item-message": "Drag file here to add it to the shared playlist.",
     "sharedplaylistenabled-tooltip": "Room operators can add files to a synced playlist to make it easy for everyone to watching the same thing. Configure media directories under 'Misc'.",

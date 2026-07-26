@@ -6,7 +6,10 @@ Boots a real server with a short pause-warning threshold and the yap timer on, t
 - has a client go AFK and confirms both the State field and the chat fallback stop, while the
   yap-timer State field keeps flowing;
 - confirms the warning resumes when the AFK client returns and (separately) when it disconnects;
-- confirms a stock client can toggle AFK via the /afk chat command.
+- confirms a stock client can toggle AFK via the /afk chat command;
+- confirms targeted AFK changes (setOthersAfk): Set:afk with a username marks another user,
+  the broadcast carries setBy, the target is forced not-ready, legacy observers get chat, and
+  a stock client can do the same via "/afk <name>" (with a private error for unknown names).
 """
 import os
 import sys
@@ -111,6 +114,42 @@ suppressedByStock = pump_until([LEAD, CAP, LEG], lambda: count_since(evts(CAP, "
 check(SCEN, "stock client /afk chat command suppresses the warning",
       count_since(evts(CAP, "pw"), mark5 + 0.6) == 0, "pw after /afk: {}".format(count_since(evts(CAP, "pw"), mark5 + 0.6)))
 LEG.send({"Chat": "/afk"})  # toggle back off
+pump_for([LEAD, CAP, LEG], 0.5)
+
+# 6) targeted AFK (setOthersAfk): CAP marks LEAD as AFK; broadcast carries setBy,
+#    target is forced not-ready, legacy observer gets a setter-attributed chat line
+LEAD.send({"Set": {"ready": {"isReady": True, "manuallyInitiated": True}}})  # so the forced
+# not-ready below actually has something to flip (LEAD was left not-ready by its earlier AFK)
+assert pump_until([LEAD, CAP, LEG], lambda: any(
+    s.get("username") == "lead" and s.get("isReady") for _, s in sets_of(CAP, "ready")), timeout=4.0), \
+    "lead did not re-ready"
+mark6 = time.time() - now
+CAP.send({"Set": {"afk": {"isAfk": True, "username": "lead"}}})
+propagated = pump_until([LEAD, CAP, LEG], lambda: any(
+    t >= mark6 and s.get("username") == "lead" and s.get("isAfk") and s.get("setBy") == "cap"
+    for t, s in sets_of(LEAD, "afk")), timeout=6.0)
+check(SCEN, "targeted Set:afk broadcast carries setBy", propagated, repr(sets_of(LEAD, "afk")))
+check(SCEN, "targeted set forces the target not-ready",
+      any(t >= mark6 and s.get("username") == "lead" and s.get("isReady") is False
+          for t, s in sets_of(CAP, "ready")), repr(sets_of(CAP, "ready")))
+legChat = pump_until([LEAD, CAP, LEG], lambda: chats_matching(LEG, "has marked"), timeout=4.0)
+check(SCEN, "legacy observer gets setter-attributed chat", legChat, repr(chats_matching(LEG, "has marked")))
+
+# 7) stock client clears it back with /afk <name> (resolved server-side)
+mark7 = time.time() - now
+LEG.send({"Chat": "/afk lead"})
+cleared = pump_until([LEAD, CAP, LEG], lambda: any(
+    t >= mark7 and s.get("username") == "lead" and s.get("isAfk") is False and s.get("setBy") == "leg"
+    for t, s in sets_of(CAP, "afk")), timeout=6.0)
+check(SCEN, "stock /afk <name> chat command clears the target's AFK", cleared, repr(sets_of(CAP, "afk")))
+
+# 8) /afk <unknown> gets a private error and nothing is broadcast
+mark8 = time.time() - now
+LEG.send({"Chat": "/afk nosuchuser"})
+gotErr = pump_until([LEAD, CAP, LEG], lambda: chats_matching(LEG, "no user called"), timeout=4.0)
+check(SCEN, "/afk <unknown user> returns a private error", gotErr, repr(chats_matching(LEG, "no user called")))
+check(SCEN, "/afk <unknown user> error is private (capable peer saw no chat)",
+      not chats_matching(CAP, "no user called"))
 
 for c in (LEAD, CAP, LEG):
     c.close()

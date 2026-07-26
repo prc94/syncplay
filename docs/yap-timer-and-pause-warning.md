@@ -179,6 +179,28 @@ Any of these toggle your own AFK state:
 There is no server flag — AFK is always available (it needs a server that
 advertises the `afk` feature; see compatibility below).
 
+### Setting someone else AFK
+
+Anyone with **control authority** in the room can also set (or clear) another
+user's AFK state — the same rule as setting others ready/not ready: everyone in
+a plain unlocked room, server admins in a locked room, operators in a managed
+room. Useful when someone walks away without toggling and the room wants the
+pause warning silenced (or their forgotten AFK cleared).
+
+* **Right-click their name** in the user list → *Set name as AFK* / *Set name
+  as no longer AFK* (shown when the server supports it and you can control the
+  room).
+* Type **`/afk name`** in the chat box, mpv chat overlay, or console — this
+  toggles that user's AFK state. Stock clients can use it too: the server
+  resolves the command itself.
+
+The change is announced with the setter's name ("*name* has been marked as AFK
+by *setter*", or a plain chat line on stock clients), and it behaves exactly
+like a self-toggle: going AFK forces them not-ready, and their own activity
+(unpausing, seeking, chatting…) clears it again. Unauthorised attempts get a
+private error message. Setting someone AFK never pauses the room — the
+pause-first behaviour is exclusive to the mpv `Ctrl+A` self-toggle.
+
 ### Automatic clear
 
 AFK is meant to be transient, so it clears itself the moment you show activity:
@@ -197,10 +219,13 @@ yourself when you are actually back.
   button, live suppression). **Stock/older clients** in the same room still see
   the AFK user as *not ready* and receive a plain chat line ("*name* is now
   AFK"); they can even toggle their own AFK by typing `/afk` (the server
-  understands the command). Nobody is required to update.
+  understands the command), or someone else's with `/afk name`. Nobody is
+  required to update.
 * On a **stock server** (no `afk` feature), the AFK button is disabled and
   `/afk` reports that the server does not support it — nothing is sent, so
-  there is no risk to interoperability.
+  there is no risk to interoperability. Setting others AFK is additionally
+  gated on its own `setOthersAfk` server feature, so an updated client never
+  sends a targeted change to a server that would misread it as a self-toggle.
 
 ---
 

@@ -192,7 +192,13 @@ class ConsoleUI(threading.Thread):
         elif command.group('command') in constants.COMMANDS_TOGGLE:
             self._syncplayClient.toggleReady()
         elif command.group('command') in constants.COMMANDS_AFK:
-            self._syncplayClient.toggleAfk()
+            targetUser = command.group('parameter')
+            if targetUser is not None:
+                targetUser = targetUser.strip()
+            if targetUser and targetUser != self._syncplayClient.userlist.currentUser.username:
+                self._syncplayClient.setOthersAfk(targetUser, not self._syncplayClient.userlist.isAfk(targetUser))
+            else:
+                self._syncplayClient.toggleAfk()
         elif command.group('command') in constants.COMMANDS_TRACKS:
             self._syncplayClient.requestTrackPublish()
         elif command.group('command') in constants.COMMANDS_PUBLISH_DOMAINS:

@@ -806,7 +806,9 @@ class SyncplayClient(object):
             "maxRoomNameLength": constants.FALLBACK_MAX_ROOM_NAME_LENGTH,
             "maxFilenameLength": constants.FALLBACK_MAX_FILENAME_LENGTH,
             "setOthersReadiness": utils.meetsMinVersion(self.serverVersion, constants.SET_OTHERS_READINESS_MIN_VERSION),
-            "afk": False  # fork feature; overwritten by the server's featureList when supported
+            "afk": False,  # fork feature; overwritten by the server's featureList when supported
+            "setOthersAfk": False  # fork feature; separate flag so a targeted set can never
+                                   # misfire as a self-toggle on an older fork server
         }
         if featureList:
             self.serverFeatures.update(featureList)
@@ -1243,15 +1245,28 @@ class SyncplayClient(object):
         if bool(newState) != self.userlist.currentUser.isAfk():
             self.toggleAfk()
 
-    def setAfk(self, username, isAfk):
+    @requireServerFeature("setOthersAfk")
+    def setOthersAfk(self, username, newState):
+        # Mirrors setOthersReadiness: the server checks control authority and echoes the
+        # result back via Set:afk (with setBy), so there is no optimistic local state.
+        self._protocol.setAfk(bool(newState), username)
+
+    def setAfk(self, username, isAfk, setBy=None):
         oldAfkState = self.userlist.isAfk(username)
         self.userlist.setAfk(username, isAfk)
         self.ui.userListChange()
         if oldAfkState != isAfk:
+            setByOther = setBy and setBy != username
             if username == self.userlist.currentUser.username:
-                self.ui.showMessage(getMessage("set-as-afk-notification" if isAfk else "set-as-not-afk-notification"))
+                if setByOther:
+                    self.ui.showMessage(getMessage("set-afk-by-other-notification" if isAfk else "set-not-afk-by-other-notification").format(setBy))
+                else:
+                    self.ui.showMessage(getMessage("set-as-afk-notification" if isAfk else "set-as-not-afk-notification"))
             elif self.userlist.isRoomSame(self.userlist.getUserRoom(username)):
-                self.ui.showMessage(getMessage("other-afk-notification" if isAfk else "other-not-afk-notification").format(username))
+                if setByOther:
+                    self.ui.showMessage(getMessage("other-set-afk-notification" if isAfk else "other-set-not-afk-notification").format(username, setBy))
+                else:
+                    self.ui.showMessage(getMessage("other-afk-notification" if isAfk else "other-not-afk-notification").format(username))
 
     @requireServerFeature("readiness")
     def toggleReady(self, manuallyInitiated=True):
