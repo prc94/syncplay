@@ -41,7 +41,13 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}
           QT_QPA_PLATFORM: offscreen
-        run: python3 tests/run_all.py --unit-only
+        run: |
+          set -o pipefail
+          python3 tests/run_all.py --unit-only 2>&1 | tee suites.log && exit 0
+          grep -E '\[FAIL\]|^  FAIL|Traceback' suites.log | head -40 | while IFS= read -r line; do
+            echo "::error::${line}"
+          done
+          exit 1
 
   e2e:
     name: E2E suites
@@ -64,4 +70,12 @@ jobs:
       - name: Run E2E suites
         env:
           PYTHONPATH: ${{ github.workspace }}
-        run: python3 tests/run_all.py --e2e-only
+        # Failing checks are echoed as ::error:: so they show up as annotations on the run,
+        # readable without pulling the whole log.
+        run: |
+          set -o pipefail
+          python3 tests/run_all.py --e2e-only 2>&1 | tee suites.log && exit 0
+          grep -E '\[FAIL\]|^  FAIL|Traceback' suites.log | head -40 | while IFS= read -r line; do
+            echo "::error::${line}"
+          done
+          exit 1
