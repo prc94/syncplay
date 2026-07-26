@@ -29,6 +29,7 @@ class FW:
     def setAdmin(self, v): self._admin = v
     def isAfk(self): return False
     def getPosition(self): return self._pos
+    def isPositionEstablished(self): return True  # settled watcher; the join guard itself is covered by suite_joinguard.py
     def getFile(self): return {"name": "f.mkv"}
     def getRoom(self): return self._room
     def supportsFeature(self, ft): return self._features.get(ft, False)

@@ -34,7 +34,7 @@ stock clients and servers** — new behavior is opt-in, feature-flagged, and alw
 ## Running & building
 
 Upstream has **no test suite and no linter config**; CI (`.github/workflows/build.yml`) only builds
-installers. This fork is tested by external suites (see "Testing the fork" below).
+installers. This fork adds its own suites in `tests/` (see "Testing the fork" below).
 
 ```bash
 python3 syncplayClient.py           # GUI client (--no-gui for console)
@@ -154,10 +154,13 @@ must be cancelled in the room-empty cleanup and guarded against firing on emptie
 
 ## Testing the fork
 
-Suites currently live *outside the repo* (a Claude-session scratch dir) — if absent, rebuild from
+Suites live in `tests/` — `python3 tests/run_all.py` (`--unit-only` for the ~15 s path); see
+`tests/README.md`. **Every new fork feature or fix ships with its suite committed there**, following
 these patterns (they found real bugs every time):
 - **Unit style:** instantiate `Room`/`SyncFactory`/protocol classes directly (`__new__` + set the
-  few attrs needed); fake watchers implementing `getName/isAdmin/supportsFeature/sendChatMessage`;
+  few attrs needed); fake watchers implementing
+  `getName/isAdmin/supportsFeature/sendChatMessage/getPosition/isPositionEstablished` (the last two
+  are required by `Room.getPosition`'s reference filter — return `True` for a settled watcher);
   backdate `_yapPauseStartedAt`-style clocks instead of sleeping.
 - **E2E style:** boot the real `syncplayServer.py` as a subprocess and drive it with a
   protocol-faithful socket client (Hello → State pings; **echo `ignoringOnTheFly.server`** or your

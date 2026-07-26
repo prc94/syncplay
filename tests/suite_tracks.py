@@ -27,6 +27,8 @@ class FW:
     def getName(self): return self._name
     def isAdmin(self): return self._admin
     def isAfk(self): return False
+    def getPosition(self): return 0.0
+    def isPositionEstablished(self): return True  # settled watcher; see suite_joinguard.py
     def getRoom(self): return self._room
     def getFile(self): return getattr(self, "file", {"name": "ep1.mkv"})
     def supportsFeature(self, ft): return self._features.get(ft, False)
