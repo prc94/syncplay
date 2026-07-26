@@ -56,6 +56,7 @@ class MiniClient:
             msg = json.loads(line.decode())
             if "Hello" in msg:
                 self.hello = True
+                self.log("hello", None)  # logged so suites can assert Hello-vs-Set ordering
                 if self.file_:
                     self.send({"Set": {"file": self.file_}})
             if "Chat" in msg:

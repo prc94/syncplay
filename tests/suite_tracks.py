@@ -294,9 +294,14 @@ ui.setTrackProposal(proposal)
 check("UiManager: no client-side OSD (lua shows the status-aware notice)", fp.osd == [], repr(fp.osd))
 check("UiManager: payload forwarded to player", fp.props == [proposal])
 check("UiManager: logged to UI", ui_mock.showMessage.called)
-ui2 = UiManager(types.SimpleNamespace(_player=None), mock.Mock())
+# No player yet: the proposal is queued for the player-ready callback rather than dropped
+# (see suite_joinprop.py - dropping it lost the room's recommendation on a cold start).
+armed = []
+ui2 = UiManager(types.SimpleNamespace(_player=None, addPlayerReadyCallback=armed.append), mock.Mock())
 ui2.setTrackProposal(proposal); ui2.setTrackProposal("junk")
-check("UiManager: no-player + junk guards", True)
+check("UiManager: proposal queued while the player starts", ui2._pendingTrackProposals == [proposal],
+      repr(ui2._pendingTrackProposals))
+check("UiManager: junk still rejected, callback armed once", len(armed) == 1, str(len(armed)))
 
 # consoleUI command dispatch
 from syncplay.ui.consoleUI import ConsoleUI

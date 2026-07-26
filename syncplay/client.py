@@ -171,6 +171,10 @@ class SyncplayClient(object):
 
     def initProtocol(self, protocol):
         self._protocol = protocol
+        # Drop stale domains here, at connectionMade - i.e. before any server message for the new
+        # connection can be processed. Doing it from checkForFeatureSupport (on Hello) instead used
+        # to wipe the domains the server pushes during the join, which it sends before its Hello.
+        self._serverTrustedDomains = []
 
     def destroyProtocol(self):
         if self._protocol:
@@ -788,7 +792,8 @@ class SyncplayClient(object):
         self._player.setFeatures(self.serverFeatures)
 
     def checkForFeatureSupport(self, featureList):
-        self._serverTrustedDomains = []  # drop stale domains when (re)connecting
+        # NB: do not reset _serverTrustedDomains here - this runs on Hello, which the server sends
+        # *after* the join-time Set:trustedDomains. initProtocol owns that reset.
         self.serverFeatures = {
             "featureList": utils.meetsMinVersion(self.serverVersion, constants.FEATURE_LIST_MIN_VERSION),
             "sharedPlaylists": utils.meetsMinVersion(self.serverVersion, constants.SHARED_PLAYLIST_MIN_VERSION),
@@ -1914,6 +1919,8 @@ class UiManager(object):
         self.lastAlertOSDEndTime = None
         self.lastError = ""
         self._yapTimerWasPaused = False
+        self._pendingTrackProposals = []  # proposals that arrived before the player was ready
+        self._pendingTrackProposalsArmed = False
 
     def getUIMode(self):
         return self.__ui.uiMode
@@ -2020,10 +2027,28 @@ class UiManager(object):
         self.showMessage(text, noPlayer=True)
         if self._client._player:
             self._client._player.setTrackProposal(values)
+            return
+        # No player yet: the connection beats the player start-up often enough that dropping the
+        # payload here silently loses the room's recommendation on a cold start. Queue it and flush
+        # once the player is up; the lua re-applies on every file-loaded, so late delivery is fine.
+        self._pendingTrackProposals.append(values)
+        while len(self._pendingTrackProposals) > constants.TRACK_CACHE_MAX_ENTRIES:
+            self._pendingTrackProposals.pop(0)  # evict the oldest layout
+        if not self._pendingTrackProposalsArmed:
+            self._pendingTrackProposalsArmed = True
+            self._client.addPlayerReadyCallback(lambda x: self._flushTrackProposals())
+
+    def _flushTrackProposals(self):
+        pending, self._pendingTrackProposals = self._pendingTrackProposals, []
+        self._pendingTrackProposalsArmed = False
+        if not self._client._player:
+            return
+        for proposal in pending:
+            self._client._player.setTrackProposal(proposal)
 
     def showChatMessage(self, username, userMessage):
         messageString = "<{}> {}".format(username, userMessage)
-        if self._client._player.chatOSDSupported and self._client._config["chatOutputEnabled"]:
+        if self._client._player and self._client._player.chatOSDSupported and self._client._config["chatOutputEnabled"]:
             self._client._player.displayChatMessage(username, userMessage)
         else:
             self.showOSDMessage(messageString, duration=constants.OSD_DURATION)
