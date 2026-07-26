@@ -77,8 +77,8 @@ behavior, just regrouped):
 
 ```
 ┌─ Updates ────────────────────────────────────────────────────────┐
-│ [x] Check for updates automatically                              │
-│ [x] Enable automatic client updates            (autoUpdate)      │
+│ [x] Check for updates automatically      (checkForUpdatesAutomatically) │
+│ [x] Install updates in place, without reinstalling  (autoUpdate) │
 │ [ ] Install updates without asking             (autoInstallUpdates)│
 │ Update source:  [prc94/syncplay             ]  (updateRepo)      │
 │                                                                  │
@@ -86,10 +86,17 @@ behavior, just regrouped):
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-- **"Enable automatic client updates"** (`autoUpdate`, default **on**) — the master toggle for
-  the whole overlay machinery. Off: no overlay is ever downloaded or activated (an existing
-  overlay stops being applied); the update check degrades to upstream behavior — notify and
-  offer the release page.
+- **"Check for updates automatically"** (`checkForUpdatesAutomatically`, upstream's key,
+  default **on**) — governs *when* checks happen, for both mechanisms: it is the early return in
+  `gui.py:automaticUpdateCheck`. Off means nothing is checked or fetched unless the user presses
+  Check now (or Help → check for updates).
+- **"Install updates in place, without reinstalling"** (`autoUpdate`, default **on**) — governs
+  *what a check does*. On: query the update source, offer to install the overlay and restart.
+  Off: upstream behavior — query syncplay.pl, notify, offer the download page. It is not a
+  kill switch for already-installed overlays: an overlay installed earlier keeps running (the
+  bootstrap reads no config by design), and Check now still works. What it stops is this client
+  acquiring new code by itself. Reverting to the shipped base is a separate action — delete the
+  overlay directory, or let the crash guard quarantine it.
 - **"Install updates without asking"** (`autoInstallUpdates`, default **off**) — with it on, a
   found update is downloaded, verified, and staged silently; the client applies it at the next
   launch, or offers an immediate restart when idle (see flows). This is the "almost on the fly"
