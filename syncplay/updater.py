@@ -219,6 +219,19 @@ def fetchAvailableOverlay(repo):
     return manifest
 
 
+def isCheckDue(lastCheckedAt, now, frequency):
+    """Whether an automatic check should run. `frequency` 0 (the fork default) means every
+    start; a positive value keeps upstream's throttle. Never checked before ⇒ always due."""
+    if not frequency:
+        return True
+    if lastCheckedAt is None:
+        return True
+    try:
+        return (now - lastCheckedAt).total_seconds() > frequency
+    except Exception:
+        return True
+
+
 def checkForUpdate(config, userInitiated=False):
     """Blocking. Returns (status, message, url, manifestOrNone) with the status strings gui.py
     already dispatches on ('uptodate' / 'updateavailale' / 'failed')."""

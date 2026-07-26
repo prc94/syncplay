@@ -91,9 +91,12 @@ behavior, just regrouped):
 ```
 
 - **"Check for updates automatically"** (`checkForUpdatesAutomatically`, upstream's key,
-  default **on**) — governs *when* checks happen, for both mechanisms: it is the early return in
+  default **on**) — governs *when* checks happen: it is the early return in
   `gui.py:automaticUpdateCheck`. Off means nothing is checked or fetched unless the user presses
-  Check now (or Help → check for updates).
+  Check now (or Help → check for updates). The check runs from `MainWindow.addClient` — on
+  connect, not when the config dialog opens — and `constants.AUTOMATIC_UPDATE_CHECK_FREQUENCY`
+  is **0**, i.e. every start (upstream throttled to 7 days; a positive value still throttles,
+  see `updater.isCheckDue`). An up-to-date result is a log line, not a dialog.
 - **"Install updates in place, without reinstalling"** (`autoUpdate`, default **on**) — governs
   *what a check does*. On: query the update source, offer to install the overlay and restart.
   Off: the same check runs, but reports the new release and links to the update source's release

@@ -1978,20 +1978,14 @@ class MainWindow(QtWidgets.QMainWindow):
             self.autoplayPushButton.setIcon(QtGui.QPixmap(resourcespath + 'empty_checkbox.png'))
 
     def automaticUpdateCheck(self):
-        currentDateTimeValue = QDateTime.currentDateTime()
         if not self.config['checkForUpdatesAutomatically']:
             return
         try:
-            if self.config['lastCheckedForUpdates']:
-                configLastChecked = datetime.strptime(self.config["lastCheckedForUpdates"], "%Y-%m-%d %H:%M:%S.%f")
-                if self.lastCheckedForUpdates is None or configLastChecked > self.lastCheckedForUpdates.toPython():
-                    self.lastCheckedForUpdates = QDateTime.fromString(self.config["lastCheckedForUpdates"], 'yyyy-MM-dd HH-mm-ss')
-            if self.lastCheckedForUpdates is None:
+            from syncplay import updater
+            lastChecked = self.lastCheckedForUpdates.toPython() if self.lastCheckedForUpdates else None
+            if updater.isCheckDue(lastChecked, QDateTime.currentDateTime().toPython(),
+                                  constants.AUTOMATIC_UPDATE_CHECK_FREQUENCY):
                 self.checkForUpdates()
-            else:
-                timeDelta = currentDateTimeValue.toPython() - self.lastCheckedForUpdates.toPython()
-                if timeDelta.total_seconds() > constants.AUTOMATIC_UPDATE_CHECK_FREQUENCY:
-                    self.checkForUpdates()
         except Exception as e:
             self.showDebugMessage("Automatic check for updates failed. An update check was manually trigggered. Reason: {}".format(str(e)))
             self.checkForUpdates()

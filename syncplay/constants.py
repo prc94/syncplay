@@ -59,7 +59,7 @@ DEBUG_MODE = False
 
 # Changing these might be ok
 DELAYED_LOAD_WAIT_TIME = 2.5
-AUTOMATIC_UPDATE_CHECK_FREQUENCY = 7 * 86400  # Days converted into seconds
+AUTOMATIC_UPDATE_CHECK_FREQUENCY = 0  # Seconds between automatic checks; 0 = check on every start
 DEFAULT_REWIND_THRESHOLD = 4
 MINIMUM_REWIND_THRESHOLD = 3
 DEFAULT_FASTFORWARD_THRESHOLD = 5

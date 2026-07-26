@@ -307,6 +307,16 @@ print(json.dumps({"release": syncplay.fork_release,
     check("CLI mappings", cg._config["autoUpdate"] is False and cg._config["updateRepo"] == "someone/fork"
           and cg._config["autoInstallUpdates"] is True)
 
+    # automatic checks run on every start (fork default), throttle still honored if reinstated
+    from datetime import datetime as _dt, timedelta as _td
+    now = _dt(2026, 7, 26, 20, 0, 0)
+    check("no cooldown configured", constants.AUTOMATIC_UPDATE_CHECK_FREQUENCY == 0)
+    check("check is due on every start", updater.isCheckDue(now - _td(seconds=1), now, 0))
+    check("check is due when never checked", updater.isCheckDue(None, now, 7 * 86400))
+    check("positive frequency still throttles",
+          not updater.isCheckDue(now - _td(days=1), now, 7 * 86400)
+          and updater.isCheckDue(now - _td(days=8), now, 7 * 86400))
+
     # the GUI must not reach the upstream syncplay.pl channel any more
     guiSource = open(os.path.join(REPO_ROOT, "syncplay", "ui", "gui.py"), encoding="utf-8").read()
     check("gui never calls the upstream version check",
