@@ -93,6 +93,106 @@ class ConfigDialog(QtWidgets.QDialog):
     moreToggling = False
 
     closed = Signal()
+    updateCheckDone = Signal(object)  # fork auto-update: (status, message, url, manifest) from the worker thread
+    updateStageDone = Signal(object)  # fork auto-update: (metaOrNone, errorOrNone) from the worker thread
+
+    # --- fork auto-update (docs/auto-update.md) -------------------------------------------
+
+    def _effectiveUpdateConfig(self):
+        config = dict(self.config)
+        config['updateRepo'] = self.updaterepoTextbox.text().strip() or constants.UPDATE_DEFAULT_REPO
+        return config
+
+    def _refreshUpdateStatusLabel(self, message=None):
+        from syncplay import updater
+        self.updateStatusLabel.setText(message if message else updater.getRunningVersionLabel())
+
+    def _updateCheckNow(self):
+        from syncplay import updater
+        config = self._effectiveUpdateConfig()
+        self.updateCheckButton.setEnabled(False)
+
+        def worker():
+            try:
+                result = updater.checkForUpdate(config, userInitiated=True)
+            except Exception as e:
+                result = ("failed", str(e), None, None)
+            self.updateCheckDone.emit(result)
+        threading.Thread(target=worker, name="SyncplayUpdateCheck", daemon=True).start()
+
+    def _updateCheckDone(self, result):
+        self.updateCheckButton.setEnabled(True)
+        status, message, url, manifest = result
+        self._refreshUpdateStatusLabel(message)
+        if manifest is not None:
+            self._offerUpdate(manifest, message)
+        elif status == "updateavailale" and url:
+            reply = QtWidgets.QMessageBox.question(
+                self, "Syncplay", message,
+                QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
+            if reply == QtWidgets.QMessageBox.Yes:
+                QDesktopServices.openUrl(QUrl(url))
+
+    def _offerUpdate(self, manifest, message):
+        from syncplay import updater
+        box = QtWidgets.QMessageBox(QtWidgets.QMessageBox.Question, "Syncplay", message, parent=self)
+        applyButton = box.addButton(getMessage("update-apply-button"), QtWidgets.QMessageBox.AcceptRole)
+        skipButton = box.addButton(getMessage("update-skip-button"), QtWidgets.QMessageBox.DestructiveRole)
+        box.addButton(getMessage("update-later-button"), QtWidgets.QMessageBox.RejectRole)
+        getattr(box, "exec_", box.exec)()
+        if box.clickedButton() is applyButton:
+            self._installUpdate(manifest)
+        elif box.clickedButton() is skipButton:
+            updater.skipRelease(manifest["fork_release"])
+
+    def _installUpdate(self, manifest):
+        from syncplay import updater
+        config = self._effectiveUpdateConfig()
+        self.updateCheckButton.setEnabled(False)
+
+        def worker():
+            try:
+                meta = updater.downloadAndStage(manifest, config)
+                self.updateStageDone.emit((meta, None))
+            except Exception as e:
+                self.updateStageDone.emit((manifest, e))
+        threading.Thread(target=worker, name="SyncplayUpdateStage", daemon=True).start()
+
+    def _updateStageDone(self, result):
+        from syncplay import updater
+        self.updateCheckButton.setEnabled(True)
+        payload, error = result
+        if error is None:
+            release = payload["fork_release"]
+            reply = QtWidgets.QMessageBox.question(
+                self, "Syncplay", getMessage("update-restart-prompt").format(release),
+                QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
+            if reply == QtWidgets.QMessageBox.Yes:
+                utils.restartClient()
+            else:
+                self._refreshUpdateStatusLabel(getMessage("update-staged-notification").format(release))
+            return
+        if isinstance(error, updater.UpdateKeyNotPinnedError):
+            if self._promptTrustUpdateRepo(error.repo, error.publicKey):
+                self._installUpdate(payload)  # payload carries the manifest on errors
+            return
+        QtWidgets.QMessageBox.warning(self, "Syncplay", str(error))
+        self._refreshUpdateStatusLabel()
+
+    def _promptTrustUpdateRepo(self, repo, publicKey):
+        from syncplay import updater
+        if not publicKey:
+            QtWidgets.QMessageBox.warning(self, "Syncplay", getMessage("update-bad-manifest-error"))
+            return False
+        prompt = getMessage("update-repo-trust-prompt").format(repo, updater.keyFingerprint(publicKey))
+        reply = QtWidgets.QMessageBox.warning(
+            self, "Syncplay", prompt,
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+            QtWidgets.QMessageBox.StandardButton.No)
+        if reply == QtWidgets.QMessageBox.Yes:
+            updater.pinKey(repo, publicKey)
+            return True
+        return False
 
     def automaticUpdatePromptCheck(self):
         if self.automaticupdatesCheckbox.checkState() == Qt.PartiallyChecked:
@@ -490,6 +590,11 @@ class ConfigDialog(QtWidgets.QDialog):
             self.config['password'] = self.serverpassTextbox.text()
         self.config['adminPassword'] = self.adminpassTextbox.text()
         self.processWidget(self, lambda w: self.saveValues(w))
+        from syncplay import updater
+        if not updater.validateRepo(self.config['updateRepo']):
+            QtWidgets.QMessageBox.warning(
+                self, "Syncplay", getMessage("update-invalid-repo-error").format(self.config['updateRepo']))
+            self.config['updateRepo'] = constants.UPDATE_DEFAULT_REPO
         if self.hostCombobox.currentText():
             self.config['host'] = self.hostCombobox.currentText() if ":" in self.hostCombobox.currentText() else self.hostCombobox.currentText() + ":" + str(constants.DEFAULT_PORT)
             self.config['host'] = self.config['host'].replace(" ", "").replace("\t", "").replace("\n", "").replace("\r", "")
@@ -913,13 +1018,45 @@ class ConfigDialog(QtWidgets.QDialog):
         self.alwaysshowCheckbox.setObjectName(constants.INVERTED_STATE_MARKER + "forceGuiPrompt")
         self.internalSettingsLayout.addWidget(self.alwaysshowCheckbox)
 
-        self.automaticupdatesCheckbox = QCheckBox(getMessage("checkforupdatesautomatically-label"))
-        self.automaticupdatesCheckbox.setObjectName("checkForUpdatesAutomatically")
-        self.internalSettingsLayout.addWidget(self.automaticupdatesCheckbox)
-
         self.autosaveJoinsToListCheckbox = QCheckBox(getMessage("autosavejoinstolist-label"))
         self.autosaveJoinsToListCheckbox.setObjectName("autosaveJoinsToList")
         self.internalSettingsLayout.addWidget(self.autosaveJoinsToListCheckbox)
+
+        ## Updates (fork auto-update — docs/auto-update.md)
+
+        self.updateSettingsGroup = QtWidgets.QGroupBox(getMessage("updates-title"))
+        self.updateSettingsLayout = QtWidgets.QGridLayout()
+        self.updateSettingsGroup.setLayout(self.updateSettingsLayout)
+
+        self.automaticupdatesCheckbox = QCheckBox(getMessage("checkforupdatesautomatically-label"))
+        self.automaticupdatesCheckbox.setObjectName("checkForUpdatesAutomatically")
+        self.updateSettingsLayout.addWidget(self.automaticupdatesCheckbox, 0, 0, 1, 2)
+
+        self.autoupdateCheckbox = QCheckBox(getMessage("autoupdate-label"))
+        self.autoupdateCheckbox.setObjectName("autoUpdate")
+        self.updateSettingsLayout.addWidget(self.autoupdateCheckbox, 1, 0, 1, 2)
+
+        self.autoinstallupdatesCheckbox = QCheckBox(getMessage("autoinstallupdates-label"))
+        self.autoinstallupdatesCheckbox.setObjectName("autoInstallUpdates")
+        self.updateSettingsLayout.addWidget(self.autoinstallupdatesCheckbox, 2, 0, 1, 2)
+
+        self.updaterepoLabel = QLabel(getMessage("updaterepo-label"), self)
+        self.updaterepoTextbox = QLineEdit()
+        self.updaterepoTextbox.setObjectName("updateRepo")
+        self.updateSettingsLayout.addWidget(self.updaterepoLabel, 3, 0)
+        self.updateSettingsLayout.addWidget(self.updaterepoTextbox, 3, 1)
+
+        self.updateStatusLabel = QLabel("", self)
+        self.updateCheckButton = QtWidgets.QPushButton(getMessage("update-check-button"))
+        self.updateCheckButton.setObjectName(constants.LOAD_SAVE_MANUALLY_MARKER + "update-check")
+        self.updateCheckButton.released.connect(self._updateCheckNow)
+        self.updateSettingsLayout.addWidget(self.updateStatusLabel, 4, 0)
+        self.updateSettingsLayout.addWidget(self.updateCheckButton, 4, 1, Qt.AlignRight)
+
+        self.subitems['autoUpdate'] = ["autoInstallUpdates", "updateRepo"]
+        self.updateCheckDone.connect(self._updateCheckDone)
+        self.updateStageDone.connect(self._updateStageDone)
+        self._refreshUpdateStatusLabel()
 
         ## Media path directories
 
@@ -935,6 +1072,7 @@ class ConfigDialog(QtWidgets.QDialog):
 
         self.miscLayout.addWidget(self.coreSettingsGroup)
         self.miscLayout.addWidget(self.internalSettingsGroup)
+        self.miscLayout.addWidget(self.updateSettingsGroup)
         self.miscLayout.addWidget(self.mediasearchSettingsGroup)
         self.miscLayout.setAlignment(Qt.AlignTop)
         self.stackedLayout.addWidget(self.miscFrame)

@@ -1,9 +1,29 @@
 # Client auto-update (overlay updates)
 
-**Status: accepted design — not yet implemented.** This document is the specification the
-implementation must follow. What exists today: the release tooling (`ci/build-overlay.py`,
-`ci/overlay-min-base`, `fork_release` in `syncplay/__init__.py`) and the maintainer decision
-guide in `docs/overlay-release-guide.md`.
+**Status: phases 1–2 implemented** (GitHub check, overlay pipeline, config-dialog UI, bootstrap,
+restart); phase 3 (git-pull mode for source checkouts, console `update` command) is still
+pending — on source checkouts the updater is check-only. Implementation lives in
+`syncplay/updater.py` (core), `syncplayClient.py` (bootstrap), `syncplay/ui/GuiConfiguration.py`
++ `syncplay/ui/gui.py` (UI); tests in `tests/suite_updater.py`. Release tooling:
+`ci/build-overlay.py`, `ci/overlay-min-base`, and the maintainer decision guide in
+`docs/overlay-release-guide.md`.
+
+Implementation notes that refine the original design:
+
+- **Key pinning storage**: trust-on-first-use pins land in the updater's own
+  `state.json` (`pinnedKeys`), which persists immediately mid-session; the `updateRepoKey`
+  config field acts as a pre-seeded pin (useful for operators shipping preconfigured builds).
+  The default repo still always verifies against the key baked into `constants.py`.
+- **Crash guard is count-based**: the bootstrap increments a marker on every overlay boot and
+  quarantines only at `UPDATE_CRASH_QUARANTINE_THRESHOLD` (2) consecutive marked boots, so a
+  quickly-closed healthy client doesn't get its overlay quarantined. The client clears the
+  marker `UPDATE_STARTUP_OK_DELAY` (5 s) after startup.
+- **With `autoUpdate` on, the syncplay.pl check is not made**, so the public-server list
+  refresh it piggybacked is skipped (the server dropdown keeps its saved entries). Turning
+  `autoUpdate` off restores the stock behavior.
+- **Testing hooks** (env vars, testing only): `SYNCPLAY_UPDATE_API_BASE` (fake GitHub API),
+  `SYNCPLAY_OVERLAY_ROOT` (overlay root override), `SYNCPLAY_UPDATE_FORCE_INSTALL=1` (allow
+  installs from a source checkout).
 
 ## The model in one paragraph
 

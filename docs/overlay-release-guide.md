@@ -105,8 +105,13 @@ Release assets per overlay release (names are load-bearing — the client looks 
 
 ## Signing keys
 
-- Generate once: `python3 ci/build-overlay.py --generate-key` → prints a base64 private key and
-  the matching public key.
+The production keypair was generated 2026-07-26; the public key is baked into
+`constants.UPDATE_DEFAULT_REPO_PUBKEY`, the private key must live only in the
+`OVERLAY_SIGNING_KEY` repository secret.
+
+- Generate (only for rotation — which requires a full release, since the pinned public key
+  ships in `constants.py`): `python3 ci/build-overlay.py --generate-key` → prints a base64
+  private key and the matching public key.
 - Private key → repository secret **`OVERLAY_SIGNING_KEY`** (never committed; treat leakage as
   full compromise — rotating it requires a full release, since the pinned public key ships in
   `constants.py`).

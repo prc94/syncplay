@@ -419,6 +419,19 @@ SCROLLING_MODE = "Scrolling"
 
 SYNCPLAY_UPDATE_URL = "https://syncplay.pl/checkforupdate?{}"  # Params
 SYNCPLAY_DOWNLOAD_URL = "https://syncplay.pl/download/"
+
+# Fork: overlay auto-update (docs/auto-update.md)
+UPDATE_DEFAULT_REPO = "prc94/syncplay"
+UPDATE_DEFAULT_REPO_PUBKEY = "hcGCS9cWfH7HEP5CSKIbqvVNF/llhtDRiVPlIuenFMw="  # base64 raw Ed25519 public key; always used for the default repo
+UPDATE_GITHUB_API_BASE = "https://api.github.com"  # tests override via SYNCPLAY_UPDATE_API_BASE env
+UPDATE_RELEASES_PATH = "/repos/{}/releases?per_page=10"
+UPDATE_MANIFEST_ASSET_REGEX = r"^syncplay-overlay-r(\d+)\.manifest\.json$"
+UPDATE_REPO_REGEX = r"^[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+$"
+UPDATE_RELEASE_PAGE_URL = "https://github.com/{}/releases"
+UPDATE_MAX_DOWNLOAD_SIZE = 20 * 1024 * 1024
+UPDATE_HTTP_TIMEOUT = 30
+UPDATE_CRASH_QUARANTINE_THRESHOLD = 2  # marked boots before an overlay is quarantined
+UPDATE_STARTUP_OK_DELAY = 5  # seconds after start() before the crash marker is cleared
 SYNCPLAY_PUBLIC_SERVER_LIST_URL = "https://syncplay.pl/listpublicservers?{}"  # Params
 
 DEFAULT_TRUSTED_DOMAINS = ["youtube.com", "youtu.be"]
