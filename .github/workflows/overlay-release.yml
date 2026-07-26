@@ -1,0 +1,30 @@
+# Fork overlay auto-update releases (docs/overlay-release-guide.md).
+# Fires on overlay-r* tags: builds the signed overlay package and attaches it
+# (zip + manifest) to a GitHub release, where clients' updaters find it.
+name: Overlay release
+on:
+  push:
+    tags: ['overlay-r*']
+
+jobs:
+  overlay:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # create the release + upload assets
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          # Keep == the oldest interpreter in the base table (build.yml freezes 3.8);
+          # the build's byte-compile pass doubles as a syntax gate for old bases.
+          python-version: '3.8'
+      - run: pip install cryptography
+      - name: Build and sign overlay
+        run: python3 ci/build-overlay.py --out dist/overlay
+        env:
+          OVERLAY_SIGNING_KEY: ${{ secrets.OVERLAY_SIGNING_KEY }}
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/overlay/*
+          generate_release_notes: true

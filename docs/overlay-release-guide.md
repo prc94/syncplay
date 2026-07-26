@@ -121,7 +121,8 @@ The production keypair was generated 2026-07-26; the public key is baked into
 
 ## GitHub Actions integration
 
-Add alongside `build.yml` (only fires on `overlay-r*` tags, so it is inert until one is pushed):
+Committed as `.github/workflows/overlay-release.yml` (only fires on `overlay-r*` tags, so it is
+inert until one is pushed). For reference:
 
 ```yaml
 name: Overlay release
