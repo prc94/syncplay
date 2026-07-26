@@ -238,6 +238,13 @@ def checkForUpdate(config, userInitiated=False):
         return "uptodate", getMessage("update-status-uptodate").format(getRunningVersionLabel()), None, None
     if not userInitiated and loadState().get("skippedRelease") == int(manifest["fork_release"]):
         return "uptodate", getMessage("update-status-uptodate").format(getRunningVersionLabel()), None, None
+    if not config.get('autoUpdate', True):
+        # In-place installs switched off: still report the fork's own releases, never send the
+        # user to upstream Syncplay (that download would replace this build).
+        return ("updateavailale",
+                getMessage("update-available-manual-notification").format(
+                    manifest["fork_release"], getRunningVersionLabel()),
+                getReleasePageUrl(repo), None)
     if int(manifest["min_base"]) > base or not canInstallOverlays():
         return ("updateavailale",
                 getMessage("update-needs-full-install-notification").format(manifest["fork_release"]),

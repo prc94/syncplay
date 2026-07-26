@@ -2001,36 +2001,14 @@ class MainWindow(QtWidgets.QMainWindow):
 
     @needsClient
     def checkForUpdates(self, userInitiated=False):
+        """Fork update check (docs/auto-update.md). Upstream's syncplay.pl check is not used:
+        it advertises stock Syncplay, whose installer would replace this build. With autoUpdate
+        off the updater reports the fork's own releases without offering to install them."""
         self.lastCheckedForUpdates = QDateTime.currentDateTime()
-        if self.config.get('autoUpdate', True):
-            # Fork auto-update path (docs/auto-update.md): GitHub releases + overlay install
-            from twisted.internet import threads
-            deferred = threads.deferToThread(self._syncplayClient.checkForOverlayUpdate, userInitiated)
-            deferred.addCallback(self._handleOverlayUpdateResult, userInitiated)
-            deferred.addErrback(lambda failure: self.showErrorMessage(str(failure.value)))
-            return
-        updateStatus, updateMessage, updateURL, self.publicServerList = self._syncplayClient.checkForUpdate(userInitiated)
-
-        if updateMessage is None:
-            if updateStatus == "uptodate":
-                updateMessage = getMessage("syncplay-uptodate-notification")
-            elif updateStatus == "updateavailale":
-                updateMessage = getMessage("syncplay-updateavailable-notification")
-            else:
-                import syncplay
-                updateMessage = getMessage("update-check-failed-notification").format(syncplay.version)
-                if userInitiated == True:
-                    updateURL = constants.SYNCPLAY_DOWNLOAD_URL
-        if updateURL is not None:
-            reply = QtWidgets.QMessageBox.question(
-                self, "Syncplay",
-                updateMessage, QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
-            if reply == QtWidgets.QMessageBox.Yes:
-                self.QtGui.QDesktopServices.openUrl(QUrl(updateURL))
-        elif userInitiated:
-            QtWidgets.QMessageBox.information(self, "Syncplay", updateMessage)
-        else:
-            self.showMessage(updateMessage)
+        from twisted.internet import threads
+        deferred = threads.deferToThread(self._syncplayClient.checkForOverlayUpdate, userInitiated)
+        deferred.addCallback(self._handleOverlayUpdateResult, userInitiated)
+        deferred.addErrback(lambda failure: self.showErrorMessage(str(failure.value)))
 
     # --- fork auto-update (docs/auto-update.md) -------------------------------------------
 

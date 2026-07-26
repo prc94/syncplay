@@ -1355,6 +1355,8 @@ class SyncplayClient(object):
         return updater.checkForUpdate(self._config, userInitiated)
 
     def checkForUpdate(self, userInitiated):
+        """Upstream's syncplay.pl version check. The fork GUI no longer calls it (see
+        ui/gui.py:checkForUpdates); kept intact so it stays mergeable with upstream."""
         try:
             import urllib.request, urllib.parse, urllib.error, syncplay, sys, json, platform
             try:

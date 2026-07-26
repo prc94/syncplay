@@ -104,6 +104,7 @@ en = {
     "update-staged-notification": "Syncplay update r{} has been installed and will apply the next time Syncplay starts.",  # New release
     "update-restart-prompt": "Syncplay update r{} has been installed. Restart Syncplay now to apply it?",  # New release
     "update-needs-full-install-notification": "Syncplay update r{} requires a new full installation. Do you want to visit the release page?",  # New release
+    "update-available-manual-notification": "Syncplay update r{} is available (you are running {}). In-place installation is switched off, so it has to be installed by hand. Do you want to visit the release page?",  # New release, running version label
     "update-repo-trust-prompt": "Updates for this Syncplay are provided by \"{}\", which is not the default source.\n\nSigning key fingerprint:\n{}\n\nUpdates can run any code on your computer. Only continue if you trust the owner of this repository. Trust this source from now on?",  # Repo, fingerprint
     "update-repo-not-trusted-error": "The update source \"{}\" is not trusted — its signing key has not been accepted.",  # Repo
     "update-overlay-disabled-after-crash-notification": "Syncplay update r{} failed to start and has been disabled — you are running the originally installed version. You can retry the update from the settings dialog.",  # Overlay release
@@ -468,7 +469,7 @@ en = {
     "privacy-dontsend-tooltip": "Do not send this information to the server. This provides for maximum privacy.",
     "checkforupdatesautomatically-tooltip": "Regularly check whether a newer version is available. Without this, updates are only found when you press Check now.",
     "updates-title": "Updates",
-    "autoupdate-tooltip": "Install updates from the update source directly into this client, applied when it restarts. When disabled, an update check only tells you a new version exists and points you at the download page; a client already updated this way keeps the version it has.",
+    "autoupdate-tooltip": "Install updates from the update source directly into this client, applied when it restarts. When disabled, an update check only tells you a new version exists and points you at the update source's release page; a client already updated this way keeps the version it has.",
     "autoinstallupdates-tooltip": "Download and install updates as soon as they are found, applying them at the next launch (or offering an immediate restart when idle).",
     "updaterepo-tooltip": "GitHub repository (owner/repository) that provides client updates. Changing this changes who can ship code to your computer — you will be asked to confirm its signing key.",
     "update-check-tooltip": "Check the update source for a newer Syncplay release now.",

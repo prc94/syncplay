@@ -18,12 +18,13 @@ Implementation notes that refine the original design:
   quarantines only at `UPDATE_CRASH_QUARANTINE_THRESHOLD` (2) consecutive marked boots, so a
   quickly-closed healthy client doesn't get its overlay quarantined. The client clears the
   marker `UPDATE_STARTUP_OK_DELAY` (5 s) after startup.
-- **With `autoUpdate` on, the syncplay.pl version check is not made** — upstream releases are
-  never announced, which is intended: that notification points users at stock Syncplay, which
-  would replace the fork build. The public-server list is unaffected; it has its own fetch
+- **The syncplay.pl version check is never made**, whatever the settings say: it advertises
+  stock Syncplay, whose installer would replace the fork build. `client.checkForUpdate` is left
+  in place (unused) so the file stays mergeable with upstream; `gui.checkForUpdates` always goes
+  through the updater. The public-server list is unaffected — it has its own fetch
   (`utils.getListOfPublicServers`, called by the config dialog when nothing is cached, gated on
-  `checkForUpdatesAutomatically`) and only loses the incidental refresh that rode along with the
-  version check. Turning `autoUpdate` off restores the stock behavior.
+  `checkForUpdatesAutomatically`) and only loses the incidental refresh that used to ride along
+  with the version check.
 - **Testing hooks** (env vars, testing only): `SYNCPLAY_UPDATE_API_BASE` (fake GitHub API),
   `SYNCPLAY_OVERLAY_ROOT` (overlay root override), `SYNCPLAY_UPDATE_FORCE_INSTALL=1` (allow
   installs from a source checkout).
@@ -95,11 +96,11 @@ behavior, just regrouped):
   Check now (or Help → check for updates).
 - **"Install updates in place, without reinstalling"** (`autoUpdate`, default **on**) — governs
   *what a check does*. On: query the update source, offer to install the overlay and restart.
-  Off: upstream behavior — query syncplay.pl, notify, offer the download page. It is not a
-  kill switch for already-installed overlays: an overlay installed earlier keeps running (the
-  bootstrap reads no config by design), and Check now still works. What it stops is this client
-  acquiring new code by itself. Reverting to the shipped base is a separate action — delete the
-  overlay directory, or let the crash guard quarantine it.
+  Off: the same check runs, but reports the new release and links to the update source's release
+  page instead of installing anything. It is not a kill switch for already-installed overlays:
+  an overlay installed earlier keeps running (the bootstrap reads no config by design). What it
+  stops is this client acquiring new code by itself. Reverting to the shipped base is a separate
+  action — delete the overlay directory, or let the crash guard quarantine it.
 - **"Install updates without asking"** (`autoInstallUpdates`, default **off**) — with it on, a
   found update is downloaded, verified, and staged silently; the client applies it at the next
   launch, or offers an immediate restart when idle (see flows). This is the "almost on the fly"

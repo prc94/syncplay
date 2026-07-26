@@ -234,6 +234,17 @@ with tempfile.TemporaryDirectory(prefix="suite-updater-") as tmp:
     manifest2.clear(); manifest2.update(manifestHolder)
     served["releases"] = releasesJson(baseUrl)
 
+    # autoUpdate off: still the fork's own release page, never an install and never syncplay.pl
+    manualConfig = dict(config)
+    manualConfig['autoUpdate'] = False
+    statusM, messageM, urlM, manifestM = updater.checkForUpdate(manualConfig, userInitiated=True)
+    check("autoUpdate off reports the release without offering an install",
+          statusM == "updateavailale" and manifestM is None
+          and urlM == updater.getReleasePageUrl(constants.UPDATE_DEFAULT_REPO),
+          "{}: {} -> {}".format(statusM, messageM, urlM))
+    check("autoUpdate off never points at upstream syncplay.pl",
+          "syncplay.pl" not in (urlM or ""), urlM)
+
     # --- bootstrap lifecycle in subprocesses against the staged r2 overlay ---
     driverPath = os.path.join(tmp, "driver.py")
     with open(driverPath, "w", encoding="utf-8") as f:
@@ -295,6 +306,13 @@ print(json.dumps({"release": syncplay.fork_release,
                                                      auto_install_updates=True))
     check("CLI mappings", cg._config["autoUpdate"] is False and cg._config["updateRepo"] == "someone/fork"
           and cg._config["autoInstallUpdates"] is True)
+
+    # the GUI must not reach the upstream syncplay.pl channel any more
+    guiSource = open(os.path.join(REPO_ROOT, "syncplay", "ui", "gui.py"), encoding="utf-8").read()
+    check("gui never calls the upstream version check",
+          "_syncplayClient.checkForUpdate(" not in guiSource)
+    check("gui never offers the upstream download URL",
+          "SYNCPLAY_DOWNLOAD_URL" not in guiSource)
 
     # every update-* message key referenced in code exists in English
     from syncplay.messages_en import en
