@@ -6,7 +6,7 @@ Upstream Syncplay has no test suite; these are self-contained scripts, not pytes
 line per check and a summary, and exits non-zero on failure.
 
 ```bash
-python3 tests/run_all.py              # everything (~2-3 min; needs free ports 19001-19081)
+python3 tests/run_all.py              # everything (~2-3 min; needs free ports 19001-19073)
 python3 tests/run_all.py --unit-only  # fast path (~15 s)
 python3 tests/suite_admin.py          # any suite runs standalone
 ```

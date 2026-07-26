@@ -61,7 +61,6 @@ def make_factory(adminPassword=None):
     f.maxChatMessageLength = 150
     f._roomManager = StubRoomManager()
     f._trackCache = {}  # per-room layout->proposal cache (setWatcherRoom reads it on room switch)
-    f._domainCache = {}  # per-room trusted-domains cache (same, see suite_joinprop.py)
     return f
 
 admin = FW("adm", admin=True)

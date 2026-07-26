@@ -4,7 +4,7 @@ The bug this covers: the server used to push Set:trustedDomains / Set:trackPropo
 addWatcher - i.e. *before* its Hello - and the client wiped its session-only copy of that state
 while handling the Hello. On the wire the fix is simply that the Hello now comes first.
 """
-import os, sys, time
+import os, sys, time, shutil, tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_harness import MiniClient, ServerBoot, check, RESULTS, evts, chats_matching
 RESULTS.clear()
@@ -117,7 +117,7 @@ assert pump_until([A, SW], lambda: sets_of(SW, "trustedDomains") and sets_of(SW,
 check(SCEN, "room switch delivers domains + proposal", len(sets_of(SW, "trustedDomains")) == 1
       and len(sets_of(SW, "trackProposal")) == 1)
 
-# --- after the room empties both layouts and domains are remembered (docs/server-admins.md) ---
+# --- an ORDINARY room is discarded once empty: layouts persist, its domains do not ---
 for c in (A, LC, LF, SW):
     c.close()
 time.sleep(1.2)  # let the server observe every disconnect and run its empty-room cleanup
@@ -132,21 +132,53 @@ check(SCEN, "next session's joiner still gets the remembered layout",
 check(SCEN, "remembered layout still arrives after the Hello",
       index_of_hello(FRESH) < index_of_set(FRESH, "trackProposal"),
       "hello@{} tracks@{}".format(index_of_hello(FRESH), index_of_set(FRESH, "trackProposal")))
-check(SCEN, "next session's joiner still gets the remembered domains",
-      len(sets_of(FRESH, "trustedDomains")) == 1, repr(sets_of(FRESH, "trustedDomains")))
-check(SCEN, "remembered domains still arrive after the Hello",
-      index_of_hello(FRESH) < index_of_set(FRESH, "trustedDomains"),
-      "hello@{} domains@{}".format(index_of_hello(FRESH), index_of_set(FRESH, "trustedDomains")))
-gotD = sets_of(FRESH, "trustedDomains")
-check(SCEN, "remembered domains keep their payload and attribution",
-      gotD and gotD[0][1]["domains"] == ["example.com", "cdn.test"] and gotD[0][1]["by"] == "adm",
-      repr(gotD))
+check(SCEN, "an ordinary room's domains go with it when it is torn down",
+      not sets_of(FRESH, "trustedDomains"), repr(sets_of(FRESH, "trustedDomains")))
 FRESH.close()
 
 srv.clean_log(SCEN)
 srv.stop()
 
-# --- ...but neither cache outlives the server process ---
+# --- a PERMANENT room is never torn down, so its domains do survive being empty ---
+tmp = tempfile.mkdtemp(prefix="syncplay-joinprop-")
+permFile = os.path.join(tmp, "permanent.txt")
+with open(permFile, "w") as fh:
+    fh.write("perm\n")
+srvP = ServerBoot(19073, ["--admin-password", "S3cret", "--salt", "testsalt",
+                          "--rooms-db-file", os.path.join(tmp, "rooms.db"),
+                          "--permanent-rooms-file", permFile])
+PA = MiniClient("permAdm", "perm", "1.7.6", CAPABLE, role="leader",
+                file_={"name": "ep1.mkv", "duration": 100, "size": 500})
+PA.connect(19073)
+assert pump_until([PA], lambda: PA.hello), "perm admin hello"
+PA.t0 = time.time()
+PA.send({"Chat": "/admin S3cret"})
+assert pump_until([PA], lambda: chats_matching(PA, "You are now a server admin")), "perm admin auth"
+PA.send({"Set": {"trustedDomains": dict(DOMAINS)}})
+assert pump_until([PA], lambda: chats_matching(PA, "trusted domain")), "perm publish ack"
+pump_for([PA], 0.6)
+PA.close()
+time.sleep(1.2)  # room is now empty - but permanent, so it is not discarded
+
+PJ = MiniClient("permJoiner", "perm", "1.7.6", CAPABLE)
+PJ.connect(19073)
+PJ.t0 = time.time()
+assert pump_until([PJ], lambda: PJ.hello), "perm joiner hello"
+pump_for([PJ], 1.2)
+gotP = sets_of(PJ, "trustedDomains")
+check(SCEN, "a permanent room keeps its domains across an empty session", len(gotP) == 1, repr(gotP))
+check(SCEN, "those domains keep their payload and attribution",
+      gotP and gotP[0][1]["domains"] == ["example.com", "cdn.test"] and gotP[0][1]["by"] == "permAdm",
+      repr(gotP))
+check(SCEN, "and still arrive after the Hello",
+      index_of_hello(PJ) < index_of_set(PJ, "trustedDomains"),
+      "hello@{} domains@{}".format(index_of_hello(PJ), index_of_set(PJ, "trustedDomains")))
+PJ.close()
+srvP.clean_log(SCEN)
+srvP.stop()
+shutil.rmtree(tmp, ignore_errors=True)
+
+# --- ...but nothing outlives the server process ---
 srv2 = ServerBoot(19072, ["--admin-password", "S3cret", "--salt", "testsalt"])
 AFTER = MiniClient("afterRestart", "jp", "1.7.6", CAPABLE)
 AFTER.connect(19072)

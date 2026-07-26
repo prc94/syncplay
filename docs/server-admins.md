@@ -139,10 +139,15 @@ Shared domains are **merged, never replacing** a user's own list, and are **drop
 (on each client, they are session-only and never written to config). This only affects clients that
 have "only switch to trusted domains" enabled.
 
-Server-side the published list is remembered **per room**, on the same terms as the track cache: it
-**survives the room emptying**, so the next session in that room still gets the domains without an
-admin re-publishing, and it is held in memory only — a **server restart** clears it. Re-publishing
-replaces the room's entry (last write wins).
+Server-side the published list is kept on the room and is **not** cleared when the last person
+leaves, so a room that outlives being empty — a **permanent** room, or a persistent room with a
+non-empty playlist — still hands the domains to the next session without an admin re-publishing.
+An ordinary room is discarded once it empties, so its domains go with it; publish again in that
+case. Either way the list is memory-only and a **server restart** clears it, and re-publishing
+replaces it (last write wins).
+
+(The track cache is broader: it is held per room *name* at server level, so remembered layouts
+survive even an ordinary room being discarded.)
 
 **Delivery to joiners:** the server hands the room's remembered domains (and any remembered track
 layouts) to a joining client **after** its handshake reply, never before — a client resets its

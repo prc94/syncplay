@@ -206,7 +206,6 @@ class FW:
 def makeFactory():
     f = SyncFactory.__new__(SyncFactory)
     f._trackCache = {}
-    f._domainCache = {}
     f.maxChatMessageLength = 200
     return f
 
@@ -269,32 +268,40 @@ f.sendRoomStateToWatcher(w)
 check("roomless watcher handled without crashing", not w.proposals and not w.domains)
 
 
-# ---------------- server: room state that outlives the room ----------------
-# Both per-room caches deliberately OUTLIVE the room (docs/server-admins.md): remembering an
-# admin's layouts and trusted domains across sessions is the point; only a restart clears them.
-# The room's "latest proposal" pointer is session state and is dropped.
+# ---------------- server: what survives the room emptying ----------------
+# _trackCache is factory-level and deliberately outlives the room entirely. The published trusted
+# domains live on the Room, and are no longer cleared when it empties - so they survive for as long
+# as the Room object does, which for an ordinary room is "not at all" (see _deleteRoomIfEmpty) and
+# for a permanent/persistent one is until the server stops. The "latest proposal" pointer is
+# session state and is still dropped.
 f = makeFactory()
 f._trackCache["r"] = {"sigA": {"audioId": 1, "signature": "sigA", "by": "adm"}}
-f._domainCache["r"] = {"domains": ["example.com"], "by": "adm"}
 room = Room("r", None)
 room.setTrackProposal({"audioId": 1, "signature": "sigA", "by": "adm"})
+room.setTrustedDomains({"domains": ["example.com"], "by": "adm"})
 room.setTrackProposal(None)  # mimic removeWatcher's empty-room cleanup block
 check("emptied room drops its latest proposal", room.getTrackProposal() is None)
 check("emptied room KEEPS its cached layouts", len(f._cachedTrackProposals("r")) == 1,
       repr(f._cachedTrackProposals("r")))
-check("emptied room KEEPS its cached domains", f._domainCache.get("r") is not None)
+check("emptied room KEEPS its trusted domains", room.getTrustedDomains() is not None,
+      repr(room.getTrustedDomains()))
 
-# An ordinary Room object is destroyed once empty, so the next session gets a brand new one -
-# setWatcherRoom is what restores the domains onto it from the cache.
-fresh = Room("r", None)
-check("recreated room starts with no domains of its own", fresh.getTrustedDomains() is None)
-if fresh.getTrustedDomains() is None and "r" in f._domainCache:
-    fresh.setTrustedDomains(f._domainCache["r"])
-w = FW("newcomer", CAPABLE); w._room = fresh
+# A room that survived being empty (permanent / persistent-with-playlist) hands both to the next
+# session, with no re-publish needed.
+w = FW("newcomer", CAPABLE); w._room = room
 f.sendRoomStateToWatcher(w)
-check("next session's joiner still gets the remembered layouts", len(w.proposals) == 1, repr(w.proposals))
-check("next session's joiner still gets the remembered domains",
+check("surviving room's next joiner gets the remembered layouts", len(w.proposals) == 1, repr(w.proposals))
+check("surviving room's next joiner gets the remembered domains",
       w.domains == [{"domains": ["example.com"], "by": "adm"}], repr(w.domains))
+
+# An ordinary room is destroyed once empty, so the next session gets a brand new Room: layouts
+# still come from the factory cache, domains are gone (accepted trade-off - no separate cache).
+recreated = Room("r", None)
+check("recreated ordinary room has no domains", recreated.getTrustedDomains() is None)
+w = FW("afterTeardown", CAPABLE); w._room = recreated
+f.sendRoomStateToWatcher(w)
+check("after teardown layouts still arrive", len(w.proposals) == 1, repr(w.proposals))
+check("after teardown domains do not", w.domains == [], repr(w.domains))
 
 # A room nobody ever published for stays empty-handed.
 f2 = makeFactory()
@@ -319,14 +326,10 @@ check("checkForFeatureSupport does not reset the domain overlay",
       "_serverTrustedDomains = []" not in featureSupportBody)
 check("initProtocol resets the domain overlay instead",
       "_serverTrustedDomains = []" in clientSrc[clientSrc.index("def initProtocol"):clientSrc.index("def destroyProtocol")])
-check("removeWatcher evicts neither cache",
-      "self._trackCache.pop(" not in serverSrc and "self._domainCache.pop(" not in serverSrc)
+check("removeWatcher does not evict the track cache", "self._trackCache.pop(" not in serverSrc)
 check("removeWatcher no longer clears the room's own domains",
       "room.setTrustedDomains(None)" not in serverSrc)
-check("setWatcherRoom restores domains from the cache",
-      "room.setTrustedDomains(self._domainCache[roomName])" in serverSrc)
-check("publishing records the domains in the cache",
-      "self._domainCache[room.getName()] = proposal" in serverSrc)
+check("no separate domain cache was introduced", "_domainCache" not in serverSrc)
 
 fails = [x for x in RESULTS if not x[1]]
 print("\n===== JOINPROP SUMMARY: {} checks, {} failed =====".format(len(RESULTS), len(fails)))

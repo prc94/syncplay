@@ -39,7 +39,6 @@ class FW:
 
 f = SyncFactory.__new__(SyncFactory)
 f._trackCache = {}  # per-room {signature: proposal} cache, populated by setTrackProposal
-f._domainCache = {}  # per-room trusted-domains cache (see suite_joinprop.py)
 room = Room("r", None)
 adm = FW("adm", admin=True, features={"trackProposals": True}); adm._room = room
 cap = FW("cap", features={"trackProposals": True}); cap._room = room
@@ -134,7 +133,7 @@ check("cleanup clears proposal state", room.getTrackProposal() is None)
 
 # ---------- per-room layout cache (reapply the right proposal across episodes) ----------
 fc = SyncFactory.__new__(SyncFactory)
-fc._trackCache = {}; fc._domainCache = {}
+fc._trackCache = {}
 crm = Room("cacheroom", None)
 adm2 = FW("adm2", admin=True, features={"trackProposals": True}); adm2._room = crm
 crm._watchers = {"adm2": adm2}
@@ -164,7 +163,7 @@ check("cache isolated per room", fc._cachedTrackProposals("otherroom") == [])
 # Self-contained: prime a fresh factory/room with a known number of layouts so the assertion
 # does not depend on cache state left behind by the eviction loop above.
 fs = SyncFactory.__new__(SyncFactory)
-fs._trackCache = {}; fs._domainCache = {}
+fs._trackCache = {}
 fs.roomsDbFile = None
 fs.maxUsernameLength = 150
 fs.setAfk = lambda w, v: None
@@ -201,7 +200,7 @@ check("legacy joiner: no Set payloads, single fallback chat for the latest propo
 
 # ---------- /tracks legacy server notice + dispatcher ----------
 f2 = SyncFactory.__new__(SyncFactory)
-f2._trackCache = {}; f2._domainCache = {}
+f2._trackCache = {}
 f2.adminPassword = "x"; f2.maxChatMessageLength = 150
 class RM:
     def broadcastRoom(self, sender, l):
