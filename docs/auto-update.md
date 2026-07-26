@@ -24,6 +24,11 @@ Implementation notes that refine the original design:
 - **Testing hooks** (env vars, testing only): `SYNCPLAY_UPDATE_API_BASE` (fake GitHub API),
   `SYNCPLAY_OVERLAY_ROOT` (overlay root override), `SYNCPLAY_UPDATE_FORCE_INSTALL=1` (allow
   installs from a source checkout).
+- **How to test it**: `python3 tests/run_all.py --unit-only` covers the whole pipeline offline
+  (`tests/suite_updater.py`, `tests/suite_overlay.py`). For hands-on testing with a real client,
+  `python3 tests/manual_overlay_server.py` builds a signed overlay one release ahead of the
+  checkout, serves it over a fake GitHub releases API, and prints the env vars to launch the
+  client with — then Misc tab → Updates → Check now.
 
 ## The model in one paragraph
 

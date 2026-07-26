@@ -151,12 +151,28 @@ def buildZip(stagingDir, zipPath):
     return len(entries)
 
 
+def extractPrivateKeyLine(text):
+    """Accept either a bare base64 key or verbatim --generate-key output.
+
+    The labelled form holds the public key too, so pick by label rather than by
+    "first thing that decodes" — signing with the public half would silently
+    produce signatures no client can verify.
+    """
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not lines:
+        return None
+    for index, line in enumerate(lines):
+        if line.lower().startswith("private key") and index + 1 < len(lines):
+            return lines[index + 1]
+    return " ".join(lines)
+
+
 def loadSigningKey(args):
     encoded = None
     if args.key_file:
         try:
             with open(args.key_file, encoding="utf-8") as f:
-                encoded = f.read().strip()
+                encoded = extractPrivateKeyLine(f.read())
         except OSError as e:
             fail("cannot read key file: {}".format(e))
     else:
@@ -255,7 +271,8 @@ def main():
     print("built {} ({} files, {} bytes)".format(zipPath, fileCount, len(zipBytes)))
     print("  fork_release={fork_release} min_base={min_base} upstream={upstream_version}".format(**overlayMeta))
     print("  sha256={}".format(sha256))
-    print("  signed={}".format("yes" if signature else "NO (--allow-unsigned)"))
+    print("  signed={}".format("yes, public key {}".format(publicKey) if signature
+                                else "NO (--allow-unsigned)"))
     print("  manifest: {}".format(manifestPath))
 
 

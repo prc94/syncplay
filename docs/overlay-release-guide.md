@@ -93,7 +93,9 @@ review step: treat every new import line in a diff as suspect.
    `ci/overlay-min-base` if this release starts requiring a newer base.
 3. Run the suites: `python3 tests/run_all.py`.
 4. Build locally to sanity-check: `python3 ci/build-overlay.py --allow-unsigned --out /tmp/ovl`
-   — inspect the printed summary (file count, size, versions).
+   — inspect the printed summary (file count, size, versions). To rehearse the *client* side
+   before tagging, `python3 tests/manual_overlay_server.py` serves a signed build over a fake
+   GitHub API for a real client to install (see `docs/auto-update.md`).
 5. Tag and push: `git tag overlay-r<N> && git push origin overlay-r<N>` — the workflow below
    builds, signs, and attaches the assets to a GitHub release. Clients see it on their next
    check.
