@@ -13,7 +13,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-UNIT = ["suite_unit.py", "suite_cap.py", "suite_osd.py", "suite_admin.py", "suite_tracks.py", "suite_domains.py", "suite_afk.py", "suite_joinguard.py", "suite_joinprop.py", "suite_lua.py"]
+UNIT = ["suite_unit.py", "suite_cap.py", "suite_osd.py", "suite_admin.py", "suite_tracks.py", "suite_domains.py", "suite_afk.py", "suite_joinguard.py", "suite_joinprop.py", "suite_lua.py", "suite_overlay.py"]
 E2E = ["suite_e2e.py", "suite_e2e2.py", "suite_osd_e2e.py", "suite_admin_e2e.py", "suite_tracks_e2e.py", "suite_domains_e2e.py", "suite_afk_e2e.py", "suite_joinguard_e2e.py", "suite_joinprop_e2e.py"]
 
 def main():
