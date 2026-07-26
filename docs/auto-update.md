@@ -18,9 +18,12 @@ Implementation notes that refine the original design:
   quarantines only at `UPDATE_CRASH_QUARANTINE_THRESHOLD` (2) consecutive marked boots, so a
   quickly-closed healthy client doesn't get its overlay quarantined. The client clears the
   marker `UPDATE_STARTUP_OK_DELAY` (5 s) after startup.
-- **With `autoUpdate` on, the syncplay.pl check is not made**, so the public-server list
-  refresh it piggybacked is skipped (the server dropdown keeps its saved entries). Turning
-  `autoUpdate` off restores the stock behavior.
+- **With `autoUpdate` on, the syncplay.pl version check is not made** — upstream releases are
+  never announced, which is intended: that notification points users at stock Syncplay, which
+  would replace the fork build. The public-server list is unaffected; it has its own fetch
+  (`utils.getListOfPublicServers`, called by the config dialog when nothing is cached, gated on
+  `checkForUpdatesAutomatically`) and only loses the incidental refresh that rode along with the
+  version check. Turning `autoUpdate` off restores the stock behavior.
 - **Testing hooks** (env vars, testing only): `SYNCPLAY_UPDATE_API_BASE` (fake GitHub API),
   `SYNCPLAY_OVERLAY_ROOT` (overlay root override), `SYNCPLAY_UPDATE_FORCE_INSTALL=1` (allow
   installs from a source checkout).
