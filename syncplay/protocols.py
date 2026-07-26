@@ -584,6 +584,10 @@ class SyncServerProtocol(JSONCommandProtocol):
             self._factory.addWatcher(self, username, roomName)
             self._logged = True
             self.sendHello(version)
+            # Only now is it safe to hand over the room's sticky state: the client wipes its
+            # session-only copy of it while handling Hello, so a Set sent during addWatcher (which
+            # runs before this point) would arrive first and be thrown away.
+            self._factory.sendRoomStateToWatcher(self._watcher)
             # Watcher.setRoom already tried to seek this client to the room position, but that
             # attempt was dropped: Watcher.sendState is gated on isLogged() and addWatcher runs
             # before _logged is set. Retry it now for anyone whose player was already open on the

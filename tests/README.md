@@ -1,12 +1,12 @@
 # Fork test suites
 
 Test suites for the fork's features (yap timer, pause warning, 1-hour cap, OSD message channel,
-server admins, room locking, track proposals, join position guard). Upstream Syncplay has no test
-suite; these are self-contained scripts, not pytest — each prints one line per check and a summary,
-and exits non-zero on failure.
+server admins, room locking, track proposals, join position guard, join-time state propagation).
+Upstream Syncplay has no test suite; these are self-contained scripts, not pytest — each prints one
+line per check and a summary, and exits non-zero on failure.
 
 ```bash
-python3 tests/run_all.py              # everything (~2-3 min; needs free ports 19001-19071)
+python3 tests/run_all.py              # everything (~2-3 min; needs free ports 19001-19081)
 python3 tests/run_all.py --unit-only  # fast path (~15 s)
 python3 tests/suite_admin.py          # any suite runs standalone
 ```
@@ -19,6 +19,7 @@ python3 tests/suite_admin.py          # any suite runs standalone
 | `suite_admin.py` | Server admins: canControl matrix, locking, dispatcher, auth (chat + `Set:adminAuth`), client auto-auth, **live offscreen Qt dialog** |
 | `suite_tracks.py` | Track proposals: validation, routing, per-watcher reminders, deferred delivery, mpv back-channel parse |
 | `suite_joinguard.py` | Join position guard: reference-set filtering, catch-up/teleport/give-up rules, locked + controlled rooms, pull rate limiting, client seek-on-file-load |
+| `suite_joinprop.py` | Join-time propagation of room state: Hello-vs-Set ordering, domain-overlay reset ownership, track proposals queued until the player is up, player-less chat, cache eviction |
 | `suite_lua.py` | `syncplayintf.lua` static checks (declaration order, block balance, render order) + Python-ported simulations (blink timing, layout signatures) |
 | `suite_e2e*.py` | Live-server scenarios: real `syncplayServer.py` subprocesses driven by protocol-faithful socket clients |
 

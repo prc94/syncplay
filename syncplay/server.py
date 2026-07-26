@@ -159,12 +159,31 @@ class SyncFactory(Factory):
                 watcher.sendControlledRoomAuthStatus(True, controller, roomName)
         if watcher.isAdmin():
             self._broadcastAdminStatus(watcher)  # keep the operator icon in the new room
-        cachedProposals = self._cachedTrackProposals(roomName)
-        if watcher.supportsFeature("trackProposals") and cachedProposals:
-            for proposal in cachedProposals:  # hand the capable client the whole per-room layout cache
+        if not asJoin:
+            # On a join this is deferred until after the Hello has gone out - see
+            # sendRoomStateToWatcher and SyncServerProtocol.handleHello.
+            self.sendRoomStateToWatcher(watcher)
+
+    def sendRoomStateToWatcher(self, watcher):
+        """Push the room's sticky runtime state (track proposals, trusted domains) to one watcher.
+
+        Called directly on a room switch, but for a fresh connection only *after* the Hello has been
+        sent: the client resets its session-only state while handling Hello, so anything delivered
+        before it is silently discarded.
+        """
+        room = watcher.getRoom()
+        if room is None:
+            return
+        latest = room.getTrackProposal()
+        if watcher.supportsFeature("trackProposals"):
+            proposals = self._cachedTrackProposals(room.getName())
+            signatures = {proposal.get("signature") for proposal in proposals}
+            if latest is not None and latest.get("signature") not in signatures:
+                proposals.append(latest)  # newest proposal is uncached (no signature) - send it too
+            for proposal in proposals:  # hand the capable client the whole per-room layout cache
                 watcher.sendTrackProposal(proposal)
-        elif room.getTrackProposal() is not None:
-            self._sendTrackProposalToWatcher(watcher, room.getTrackProposal())  # late joiners get the recommendation
+        elif latest is not None:
+            self._sendTrackProposalToWatcher(watcher, latest)  # late joiners get the recommendation
         if room.getTrustedDomains() is not None:
             self._sendTrustedDomainsToWatcher(watcher, room.getTrustedDomains())  # late joiners get the domains
 
@@ -188,6 +207,8 @@ class SyncFactory(Factory):
                 room.yapReset()
                 room.setTrackProposal(None)
                 room.setTrustedDomains(None)
+                # NB: _trackCache deliberately survives the room emptying (docs/server-admins.md) -
+                # remembering layouts across sessions is the point of it. Only a restart clears it.
             else:
                 self._yapNoteAfkPresence(room)  # an AFK watcher may have just left
             if self.roomsDbFile:

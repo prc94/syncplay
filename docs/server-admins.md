@@ -102,6 +102,10 @@ room-switchers receive the whole cache, so they too auto-apply on any remembered
 * It **survives the room emptying** (unlike before), but is held in memory only: a **server
   restart** clears it. Legacy (non-mpv) clients still only receive the latest recommendation as
   chat, since the server can't match layouts on their behalf.
+* A recommendation published **without** a layout signature is not cacheable, but is still
+  delivered to joiners alongside the cached layouts as the room's latest.
+* If your player is still starting up when you join, the recommendation is **held and applied once
+  the player is ready** rather than lost.
 
 ## Trusted domains
 
@@ -134,6 +138,11 @@ automatically, so there is no separate "share with new users" toggle.
 Shared domains are **merged, never replacing** a user's own list, and are **dropped on disconnect**
 or when the room empties. This only affects clients that have "only switch to trusted domains"
 enabled.
+
+**Delivery to joiners:** the server hands the room's published domains (and any remembered track
+layouts) to a joining client **after** its handshake reply, never before — a client resets its
+session-only copy of that state while processing the handshake, so anything delivered ahead of it
+would be silently discarded. Room switches are unaffected, since no handshake is involved.
 
 **Opting out:** each client has an *"Accept trusted domains shared by server admins"* setting (in
 the Trusted domains section of the settings dialog, on by default). Unticking it makes that client
