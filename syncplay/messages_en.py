@@ -101,6 +101,23 @@ en = {
     "syncplay-uptodate-notification": "Syncplay is up to date",
     "syncplay-updateavailable-notification": "A new version of Syncplay is available. Do you want to visit the release page?",
 
+    "update-status-running-base": "base r{}",  # Base fork release
+    "update-status-running-overlay": "base r{} + overlay r{}",  # Base fork release, overlay fork release
+    "update-status-uptodate": "Syncplay is up to date ({})",  # Running version label
+    "update-available-notification": "Syncplay update r{} is available (you are running {}).",  # New release, running version label
+    "update-staged-notification": "Syncplay update r{} has been installed and will apply the next time Syncplay starts.",  # New release
+    "update-restart-prompt": "Syncplay update r{} has been installed. Restart Syncplay now to apply it?",  # New release
+    "update-needs-full-install-notification": "Syncplay update r{} requires a new full installation. Do you want to visit the release page?",  # New release
+    "update-available-manual-notification": "Syncplay update r{} is available (you are running {}). In-place installation is switched off, so it has to be installed by hand. Do you want to visit the release page?",  # New release, running version label
+    "update-repo-trust-prompt": "Updates for this Syncplay are provided by \"{}\", which is not the default source.\n\nSigning key fingerprint:\n{}\n\nUpdates can run any code on your computer. Only continue if you trust the owner of this repository. Trust this source from now on?",  # Repo, fingerprint
+    "update-repo-not-trusted-error": "The update source \"{}\" is not trusted — its signing key has not been accepted.",  # Repo
+    "update-overlay-disabled-after-crash-notification": "Syncplay update r{} failed to start and has been disabled — you are running the originally installed version. You can retry the update from the settings dialog.",  # Overlay release
+    "update-invalid-repo-error": "\"{}\" is not a valid update source — expected a GitHub \"owner/repository\" name.",  # Repo
+    "update-bad-manifest-error": "The update information published by the update source is invalid or incomplete.",
+    "update-bad-signature-error": "The downloaded update failed verification (wrong checksum or signature) and has been discarded.",
+    "update-no-signing-key-error": "Updates cannot be verified in this build (no update signing key is available).",
+    "update-download-too-large-error": "The published update is larger than the allowed download size.",
+
     "mplayer-file-required-notification": "Syncplay using mplayer requires you to provide file when starting",
     "mplayer-file-required-notification/example": "Usage example: syncplay [options] [url|path/]filename",
     "mplayer2-required": "Syncplay is incompatible with MPlayer 1.x, please use mplayer2 or mpv",
@@ -218,6 +235,9 @@ en = {
     "args-argument": 'player options, if you need to pass options starting with - prepend them with single \'--\' argument',
     "clear-gui-data-argument": 'resets path and window state GUI data stored as QSettings',
     "language-argument": 'language for Syncplay messages ({})', # Languages
+    "no-auto-update-argument": 'disable the built-in client updater (modded builds only)',
+    "auto-install-updates-argument": 'download and install client updates without asking (modded builds only)',
+    "update-repo-argument": 'GitHub owner/repository to fetch client updates from (modded builds only)',
 
     "version-argument": 'prints your version',
     "version-message": "You're using Syncplay version {} ({})",
@@ -251,7 +271,14 @@ en = {
     "privacy-dontsend-option": "Don't send",
     "filename-privacy-label": "Filename information:",
     "filesize-privacy-label": "File size information:",
-    "checkforupdatesautomatically-label": "Check for Syncplay updates automatically",
+    "checkforupdatesautomatically-label": "Check for updates automatically",
+    "autoupdate-label": "Install updates in place, without reinstalling",
+    "autoinstallupdates-label": "Install updates without asking",
+    "updaterepo-label": "Update source:",
+    "update-check-button": "Check now",
+    "update-apply-button": "Update && restart",
+    "update-skip-button": "Skip this version",
+    "update-later-button": "Later",
     "autosavejoinstolist-label": "Add rooms you join to the room list",
     "slowondesync-label": "Slow down on minor desync (not supported on MPC-HC/BE)",
     "rewindondesync-label": "Rewind on major desync (recommended)",
@@ -445,7 +472,12 @@ en = {
     "privacy-sendraw-tooltip": "Send this information without obfuscation. This is the default option with most functionality.",
     "privacy-sendhashed-tooltip": "Send a hashed version of the information, making it less visible to other clients.",
     "privacy-dontsend-tooltip": "Do not send this information to the server. This provides for maximum privacy.",
-    "checkforupdatesautomatically-tooltip": "Regularly check with the Syncplay website to see whether a new version of Syncplay is available.",
+    "checkforupdatesautomatically-tooltip": "Regularly check whether a newer version is available. Without this, updates are only found when you press Check now.",
+    "updates-title": "Updates",
+    "autoupdate-tooltip": "Install updates from the update source directly into this client, applied when it restarts. When disabled, an update check only tells you a new version exists and points you at the update source's release page; a client already updated this way keeps the version it has.",
+    "autoinstallupdates-tooltip": "Download and install updates as soon as they are found, applying them at the next launch (or offering an immediate restart when idle).",
+    "updaterepo-tooltip": "GitHub repository (owner/repository) that provides client updates. Changing this changes who can ship code to your computer — you will be asked to confirm its signing key.",
+    "update-check-tooltip": "Check the update source for a newer Syncplay release now.",
     "autosavejoinstolist-tooltip": "When you join a room in a server, automatically remember the room name in the list of rooms to join.",
     "slowondesync-tooltip": "Reduce playback rate temporarily when needed to bring you back in sync with other viewers. Not supported on MPC-HC/BE.",
     "dontslowdownwithme-tooltip": "Means others do not get slowed down or rewinded if your playback is lagging. Useful for room operators.",

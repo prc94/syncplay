@@ -68,6 +68,10 @@ class ConfigurationGetter(object):
             "language": "",
             "checkForUpdatesAutomatically": None,
             "lastCheckedForUpdates": "",
+            "autoUpdate": True,
+            "autoInstallUpdates": False,
+            "updateRepo": constants.UPDATE_DEFAULT_REPO,
+            "updateRepoKey": "",
             "resetConfig": False,
             "showOSD": True,
             "showOSDWarnings": True,
@@ -146,6 +150,8 @@ class ConfigurationGetter(object):
             "onlySwitchToTrustedDomains",
             "receiveServerTrustedDomains",
             "autosaveJoinsToList",
+            "autoUpdate",
+            "autoInstallUpdates",
             "chatInputEnabled",
             "chatInputFontUnderline",
             "chatDirectInput",
@@ -229,7 +235,9 @@ class ConfigurationGetter(object):
                 "chatTimeout", "chatOutputEnabled"],
             "general": [
                 "language", "checkForUpdatesAutomatically",
-                "lastCheckedForUpdates"]
+                "lastCheckedForUpdates",
+                "autoUpdate", "autoInstallUpdates",
+                "updateRepo", "updateRepoKey"]
         }
 
         self._playerFactory = PlayerFactory()
@@ -330,6 +338,13 @@ class ConfigurationGetter(object):
                     key = "loadPlaylistFromFile"
                 if key == "admin_password":
                     key = "adminPassword"
+                if key == "no_auto_update":
+                    self._config["autoUpdate"] = False
+                    continue
+                if key == "auto_install_updates":
+                    key = "autoInstallUpdates"
+                if key == "update_repo":
+                    key = "updateRepo"
                 self._config[key] = val
 
     def _splitPortAndHost(self, host):
@@ -518,6 +533,9 @@ class ConfigurationGetter(object):
         self._argparser.add_argument('--player-path', metavar='path', type=str, help=getMessage("player-path-argument"))
         self._argparser.add_argument('-psn', metavar='blackhole', type=str, help=argparse.SUPPRESS)
         self._argparser.add_argument('--language', metavar='language', type=str, help=getMessage("language-argument"))
+        self._argparser.add_argument('--no-auto-update', action='store_true', help=getMessage("no-auto-update-argument"))
+        self._argparser.add_argument('--auto-install-updates', action='store_true', help=getMessage("auto-install-updates-argument"))
+        self._argparser.add_argument('--update-repo', metavar='updateRepo', type=str, help=getMessage("update-repo-argument"))
         self._argparser.add_argument('file', metavar='file', type=str, nargs='?', help=getMessage("file-argument"))
         self._argparser.add_argument('--clear-gui-data', action='store_true', help=getMessage("clear-gui-data-argument"))
         self._argparser.add_argument('-v', '--version', action='store_true', help=getMessage("version-argument"))

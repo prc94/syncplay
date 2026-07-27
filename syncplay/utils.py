@@ -229,6 +229,17 @@ def parseCommandLineString(s):
     arsToReturn = re.findall(constants.ARGUMENT_SPLIT_REGEX, s)
     return arsToReturn
 
+def restartClient():
+    """Relaunch the client with the original arguments (fork: applies a staged overlay update).
+    The caller must have saved config and shut the connection down first."""
+    if getattr(sys, 'frozen', '') or isWindows():
+        import subprocess
+        subprocess.Popen([sys.executable] + sys.argv[1:], close_fds=True)
+        os._exit(0)
+    else:
+        os.execv(sys.executable, [sys.executable] + sys.argv)
+
+
 def blackholeStdoutForFrozenWindow():
     if getattr(sys, 'frozen', '') == "windows_exe":
         class Stderr(object):

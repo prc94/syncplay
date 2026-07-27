@@ -1,0 +1,3 @@
+# Minimum base fork_release the next overlay release supports.
+# Bump (never lower) per the policy in docs/overlay-release-guide.md.
+1

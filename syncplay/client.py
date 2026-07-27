@@ -989,6 +989,7 @@ class SyncplayClient(object):
         if self._running:
             return
         self._running = True
+        reactor.callLater(constants.UPDATE_STARTUP_OK_DELAY, self._markOverlayStartupSuccessful)
         if self._playerClass:
             perPlayerArguments = utils.getPlayerArgumentsByPathAsArray(self._config['perPlayerArguments'], self._config['playerPath'])
             if perPlayerArguments:
@@ -1348,7 +1349,29 @@ class SyncplayClient(object):
         if room in self.controlpasswords:
             return self.controlpasswords[room]
 
+    def _markOverlayStartupSuccessful(self):
+        # Fork auto-update: the client survived startup, so the active overlay is good.
+        # Also surfaces a bootstrap quarantine from this boot (docs/auto-update.md).
+        try:
+            from syncplay import updater
+            updater.markStartupSuccessful()
+            quarantinedRelease = updater.getQuarantinedRelease()
+            if quarantinedRelease:
+                self.ui.showErrorMessage(
+                    getMessage("update-overlay-disabled-after-crash-notification").format(quarantinedRelease))
+        except Exception:
+            pass
+
+    def checkForOverlayUpdate(self, userInitiated):
+        """Fork auto-update check (docs/auto-update.md). Blocking; returns
+        (status, message, url, manifestOrNone) — unlike checkForUpdate, the 4th slot is the
+        overlay manifest when an installable update exists, never a public-server list."""
+        from syncplay import updater
+        return updater.checkForUpdate(self._config, userInitiated)
+
     def checkForUpdate(self, userInitiated):
+        """Upstream's syncplay.pl version check. The fork GUI no longer calls it (see
+        ui/gui.py:checkForUpdates); kept intact so it stays mergeable with upstream."""
         try:
             import urllib.request, urllib.parse, urllib.error, syncplay, sys, json, platform
             try:

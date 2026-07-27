@@ -1984,20 +1984,14 @@ class MainWindow(QtWidgets.QMainWindow):
             self.autoplayPushButton.setIcon(QtGui.QPixmap(resourcespath + 'empty_checkbox.png'))
 
     def automaticUpdateCheck(self):
-        currentDateTimeValue = QDateTime.currentDateTime()
         if not self.config['checkForUpdatesAutomatically']:
             return
         try:
-            if self.config['lastCheckedForUpdates']:
-                configLastChecked = datetime.strptime(self.config["lastCheckedForUpdates"], "%Y-%m-%d %H:%M:%S.%f")
-                if self.lastCheckedForUpdates is None or configLastChecked > self.lastCheckedForUpdates.toPython():
-                    self.lastCheckedForUpdates = QDateTime.fromString(self.config["lastCheckedForUpdates"], 'yyyy-MM-dd HH-mm-ss')
-            if self.lastCheckedForUpdates is None:
+            from syncplay import updater
+            lastChecked = self.lastCheckedForUpdates.toPython() if self.lastCheckedForUpdates else None
+            if updater.isCheckDue(lastChecked, QDateTime.currentDateTime().toPython(),
+                                  constants.AUTOMATIC_UPDATE_CHECK_FREQUENCY):
                 self.checkForUpdates()
-            else:
-                timeDelta = currentDateTimeValue.toPython() - self.lastCheckedForUpdates.toPython()
-                if timeDelta.total_seconds() > constants.AUTOMATIC_UPDATE_CHECK_FREQUENCY:
-                    self.checkForUpdates()
         except Exception as e:
             self.showDebugMessage("Automatic check for updates failed. An update check was manually trigggered. Reason: {}".format(str(e)))
             self.checkForUpdates()
@@ -2007,29 +2001,101 @@ class MainWindow(QtWidgets.QMainWindow):
 
     @needsClient
     def checkForUpdates(self, userInitiated=False):
+        """Fork update check (docs/auto-update.md). Upstream's syncplay.pl check is not used:
+        it advertises stock Syncplay, whose installer would replace this build. With autoUpdate
+        off the updater reports the fork's own releases without offering to install them."""
         self.lastCheckedForUpdates = QDateTime.currentDateTime()
-        updateStatus, updateMessage, updateURL, self.publicServerList = self._syncplayClient.checkForUpdate(userInitiated)
+        from twisted.internet import threads
+        deferred = threads.deferToThread(self._syncplayClient.checkForOverlayUpdate, userInitiated)
+        deferred.addCallback(self._handleOverlayUpdateResult, userInitiated)
+        deferred.addErrback(lambda failure: self.showErrorMessage(str(failure.value)))
 
-        if updateMessage is None:
-            if updateStatus == "uptodate":
-                updateMessage = getMessage("syncplay-uptodate-notification")
-            elif updateStatus == "updateavailale":
-                updateMessage = getMessage("syncplay-updateavailable-notification")
+    # --- fork auto-update (docs/auto-update.md) -------------------------------------------
+
+    def _handleOverlayUpdateResult(self, result, userInitiated):
+        status, message, url, manifest = result
+        if manifest is not None:
+            if self.config.get('autoInstallUpdates') and not userInitiated:
+                self._installOverlayUpdate(manifest, silent=True)
             else:
-                import syncplay
-                updateMessage = getMessage("update-check-failed-notification").format(syncplay.version)
-                if userInitiated == True:
-                    updateURL = constants.SYNCPLAY_DOWNLOAD_URL
-        if updateURL is not None:
+                self._offerOverlayUpdate(manifest, message)
+            return
+        if url is not None:
             reply = QtWidgets.QMessageBox.question(
-                self, "Syncplay",
-                updateMessage, QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
+                self, "Syncplay", message,
+                QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
             if reply == QtWidgets.QMessageBox.Yes:
-                self.QtGui.QDesktopServices.openUrl(QUrl(updateURL))
+                self.QtGui.QDesktopServices.openUrl(QUrl(url))
         elif userInitiated:
-            QtWidgets.QMessageBox.information(self, "Syncplay", updateMessage)
+            QtWidgets.QMessageBox.information(self, "Syncplay", message)
         else:
-            self.showMessage(updateMessage)
+            self.showMessage(message)
+
+    def _offerOverlayUpdate(self, manifest, message):
+        from syncplay import updater
+        box = QtWidgets.QMessageBox(QtWidgets.QMessageBox.Question, "Syncplay", message, parent=self)
+        applyButton = box.addButton(getMessage("update-apply-button"), QtWidgets.QMessageBox.AcceptRole)
+        skipButton = box.addButton(getMessage("update-skip-button"), QtWidgets.QMessageBox.DestructiveRole)
+        box.addButton(getMessage("update-later-button"), QtWidgets.QMessageBox.RejectRole)
+        getattr(box, "exec_", box.exec)()
+        if box.clickedButton() is applyButton:
+            self._installOverlayUpdate(manifest, silent=False)
+        elif box.clickedButton() is skipButton:
+            updater.skipRelease(manifest["fork_release"])
+
+    def _installOverlayUpdate(self, manifest, silent):
+        from syncplay import updater
+        from twisted.internet import threads
+        deferred = threads.deferToThread(updater.downloadAndStage, manifest, self.config)
+        deferred.addCallback(self._overlayUpdateStaged, silent)
+        deferred.addErrback(self._overlayUpdateFailed, manifest, silent)
+
+    def _overlayUpdateStaged(self, meta, silent):
+        release = meta["fork_release"]
+        idle = self._syncplayClient.userlist.currentUser.file is None
+        if silent and not idle:
+            self.showMessage(getMessage("update-staged-notification").format(release))
+            return
+        reply = QtWidgets.QMessageBox.question(
+            self, "Syncplay", getMessage("update-restart-prompt").format(release),
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
+        if reply == QtWidgets.QMessageBox.Yes:
+            try:
+                self.saveSettings()
+            except Exception:
+                pass
+            utils.restartClient()
+        else:
+            self.showMessage(getMessage("update-staged-notification").format(release))
+
+    def _overlayUpdateFailed(self, failure, manifest, silent):
+        from syncplay import updater
+        error = failure.value
+        if isinstance(error, updater.UpdateKeyNotPinnedError):
+            if not silent and self._promptTrustUpdateRepo(error.repo, error.publicKey):
+                self._installOverlayUpdate(manifest, silent)
+            else:
+                self.showErrorMessage(str(error))
+            return
+        if silent:
+            self.showErrorMessage(str(error))
+        else:
+            QtWidgets.QMessageBox.warning(self, "Syncplay", str(error))
+
+    def _promptTrustUpdateRepo(self, repo, publicKey):
+        from syncplay import updater
+        if not publicKey:
+            QtWidgets.QMessageBox.warning(self, "Syncplay", getMessage("update-bad-manifest-error"))
+            return False
+        prompt = getMessage("update-repo-trust-prompt").format(repo, updater.keyFingerprint(publicKey))
+        reply = QtWidgets.QMessageBox.warning(
+            self, "Syncplay", prompt,
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+            QtWidgets.QMessageBox.StandardButton.No)
+        if reply == QtWidgets.QMessageBox.Yes:
+            updater.pinKey(repo, publicKey)
+            return True
+        return False
 
     def dragEnterEvent(self, event):
         data = event.mimeData()
