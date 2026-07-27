@@ -220,7 +220,7 @@ class SyncClientProtocol(JSONCommandProtocol):
             elif command == "trustedDomains":
                 self._client.setServerTrustedDomains(values)
             elif command == "afk":
-                self._client.setAfk(values.get("username"), bool(values.get("isAfk")))
+                self._client.setAfk(values.get("username"), bool(values.get("isAfk")), values.get("setBy"))
 
     def sendFeaturesUpdate(self, features):
         self.sendSet({"features": features})
@@ -372,8 +372,11 @@ class SyncClientProtocol(JSONCommandProtocol):
                 }
             })
 
-    def setAfk(self, isAfk):
-        self.sendSet({"afk": {"isAfk": isAfk}})
+    def setAfk(self, isAfk, username=None):
+        if username:
+            self.sendSet({"afk": {"isAfk": isAfk, "username": username}})
+        else:
+            self.sendSet({"afk": {"isAfk": isAfk}})
 
     def setPlaylist(self, files):
         self.sendSet({
@@ -663,7 +666,8 @@ class SyncServerProtocol(JSONCommandProtocol):
                 self._factory.setTrustedDomains(self._watcher, set_[1])
             elif command == "afk":
                 isAfk = set_[1].get("isAfk") if isinstance(set_[1], dict) else None
-                self._factory.setAfk(self._watcher, bool(isAfk))
+                username = set_[1].get("username") if isinstance(set_[1], dict) else None
+                self._factory.setAfk(self._watcher, bool(isAfk), username=username)
 
     def sendSet(self, setting):
         self.sendMessage({"Set": setting})
@@ -704,8 +708,11 @@ class SyncServerProtocol(JSONCommandProtocol):
                 }
             })
 
-    def sendSetAfk(self, username, isAfk):
-        self.sendSet({"afk": {"username": username, "isAfk": isAfk}})
+    def sendSetAfk(self, username, isAfk, setBy=None):
+        if setBy:
+            self.sendSet({"afk": {"username": username, "isAfk": isAfk, "setBy": setBy}})
+        else:
+            self.sendSet({"afk": {"username": username, "isAfk": isAfk}})
 
     def setPlaylist(self, username, files):
         self.sendSet({

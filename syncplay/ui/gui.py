@@ -849,6 +849,12 @@ class MainWindow(QtWidgets.QMainWindow):
             else:
                 menu.addAction(QtGui.QPixmap(resourcespath + "clock_go.png"), getMessage("afk-menu-label"), lambda: self._syncplayClient.toggleAfk())
 
+        if isUserRow and username != self._syncplayClient.userlist.currentUser.username and roomToJoin == self._syncplayClient.getRoom() and self._syncplayClient.userlist.currentUser.canControl() and self._syncplayClient.serverFeatures.get("afk") and self._syncplayClient.serverFeatures.get("setOthersAfk"):
+            if self._syncplayClient.userlist.isAfk(username):
+                menu.addAction(QtGui.QPixmap(resourcespath + "clock_go.png"), getMessage("setasnotafk-menu-label").format(shortUsername), lambda: self._syncplayClient.setOthersAfk(username, False))
+            else:
+                menu.addAction(QtGui.QPixmap(resourcespath + "clock_go.png"), getMessage("setasafk-menu-label").format(shortUsername), lambda: self._syncplayClient.setOthersAfk(username, True))
+
         if isUserRow and roomToJoin == self._syncplayClient.getRoom() and self._syncplayClient.userlist.currentUser.canControl() and self._syncplayClient.userlist.isReadinessSupported(requiresOtherUsers=False) and self._syncplayClient.serverFeatures["setOthersReadiness"]:
             if self._syncplayClient.userlist.isReady(username):
                 addSetUserAsReadyText = getMessage("setasnotready-menu-label").format(shortUsername)
