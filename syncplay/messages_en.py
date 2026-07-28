@@ -622,7 +622,7 @@ en = {
     "server-disable-ready-argument": "disable readiness feature",
     "server-motd-argument": "path to file from which motd will be fetched",
     "server-rooms-argument": "path to database file to use and/or create to store persistent room data. Enables rooms to persist without watchers and through restarts",
-    "server-permanent-rooms-argument": "path to file which lists permanent rooms that will be listed even if the room is empty (in the form of a text file which lists one room per line) - requires persistent rooms to be enabled",
+    "server-permanent-rooms-argument": "path to file which lists permanent rooms that will be listed even if the room is empty (in the form of a text file which lists one room per line); combine with persistent rooms to also keep their playlists across restarts",
     "server-chat-argument": "Should chat be disabled?",
     "server-yap-timer-argument": "enable the yap timer: track and show how long each room spends paused (per file)",
     "server-pause-warning-after-argument": "warn a room when a single pause exceeds this many seconds (0/unset = off); blinking OSD on supported players, chat elsewhere",

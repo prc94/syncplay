@@ -20,6 +20,7 @@ python3 tests/suite_admin.py          # any suite runs standalone
 | `suite_tracks.py` | Track proposals: validation, routing, per-watcher reminders, deferred delivery, mpv back-channel parse |
 | `suite_joinguard.py` | Join position guard: reference-set filtering, catch-up/teleport/give-up rules, locked + controlled rooms, pull rate limiting, client seek-on-file-load |
 | `suite_joinprop.py` | Join-time propagation of room state: Hello-vs-Set ordering, domain-overlay reset ownership, track proposals queued until the player is up, player-less chat, cache eviction |
+| `suite_permrooms.py` | Room startup: permanent rooms created before the port opens, `loadRooms` merging into live rooms instead of replacing them, name/key consistency |
 | `suite_lua.py` | `syncplayintf.lua` static checks (declaration order, block balance, render order) + Python-ported simulations (blink timing, layout signatures) |
 | `suite_e2e*.py` | Live-server scenarios: real `syncplayServer.py` subprocesses driven by protocol-faithful socket clients |
 
