@@ -1647,8 +1647,7 @@ class Watcher(object):
         self._positionEstablished = False  # True once this watcher demonstrably sits at the room position (see docs/join-position-guard.md)
         self._unsyncedSince = None  # When it first reported an out-of-sync position that we have been unable to correct
         self._lastPositionPull = None  # Wall-clock time of the last catch-up seek we sent it
-        self._fileRevision = 0  # Bumped on every actual file change, so state handling can tell playback from a file switch
-        self._fileRevisionAtLastReport = 0
+        self._fileChangedAt = None  # Set on every actual file change, so state handling can tell playback from a file switch
         self._connector.setWatcher(self)
         reactor.callLater(0.1, self._scheduleSendState)
 
@@ -1656,7 +1655,7 @@ class Watcher(object):
         if file_ and "name" in file_:
             file_["name"] = truncateText(file_["name"], constants.MAX_FILENAME_LENGTH)
         if file_ != self._file:
-            self._fileRevision += 1  # PublicRoomManager re-sets the same file on room moves; only real changes count
+            self._fileChangedAt = time.time()  # PublicRoomManager re-sets the same file on room moves; only real changes count
         self._file = file_
         self._server.sendFileUpdate(self)
 
@@ -1876,11 +1875,34 @@ class Watcher(object):
             self._unsyncedSince = time.time()
         self._server.pullWatcherIntoSync(self, roomPosition)
 
+    def _consumeFileChange(self, position, previousPosition):
+        """Whether this report is the first one to come from a freshly loaded file.
+
+        Armed by setFile and held until the watcher actually reports a position *from* the new
+        file, which is not simply the next report to arrive. A client that is ignoring on the fly
+        sends playstate-less States - and a playlist advance produces exactly that, because the
+        end-of-file pause is a state change - while a status poll issued during the load reports
+        the old file's position. Consuming the flag on either of those leaves the genuine 00:00
+        report looking like a backwards teleport, which unestablishes the watcher and gets it
+        seeked back to where the *previous* file ended.
+        """
+        if self._fileChangedAt is None:
+            return False
+        stillOldFile = position is None or (previousPosition is not None
+                                            and abs(position - previousPosition) <= constants.JOIN_SYNC_TOLERANCE)
+        if not stillOldFile:
+            self._fileChangedAt = None  # a position the old file cannot account for: the new one is up
+        elif time.time() - self._fileChangedAt > constants.FILE_CHANGE_REPORT_GRACE:
+            # The new file never reported a distinct position (it resumed where the old one was,
+            # or the client went quiet): stop holding the flag open indefinitely.
+            self._fileChangedAt = None
+            return False
+        return True
+
     def updateState(self, position, paused, doSeek, messageAge):
         pauseChanged = self.__hasPauseChanged(paused)
         previousPosition = self.getPosition() if self._room is not None else None  # extrapolated with the *old* _lastUpdatedOn, so it must be read first
-        fileChanged = self._fileRevision != self._fileRevisionAtLastReport
-        self._fileRevisionAtLastReport = self._fileRevision
+        fileChanged = self._consumeFileChange(position, previousPosition)
         self._lastUpdatedOn = time.time()
         if ((pauseChanged and not paused) or doSeek) and self._isAfk:
             # Returning to active watching clears AFK: unpausing or seeking - even a

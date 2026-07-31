@@ -53,6 +53,31 @@ playback, and it used to rewind the room in exactly the same way as a join. Grad
 buffering or stuttering player, however far behind it drifts) is *not* a teleport and keeps
 upstream's semantics: the room still waits for the slowest watcher.
 
+### Changing file is not a teleport
+
+Restarting at `00:00` because a *different* file was loaded — the playlist advancing at the end of
+an episode, or anyone opening something else — is a legitimate jump backwards, so the first report
+from a newly announced file always keeps its reference status.
+
+The catch is *which* report that is. It is emphatically not "the next State to arrive":
+
+* the end-of-file pause is a state change, so the client starts ignoring on the fly and its next
+  States carry **no playstate at all** (`SyncClientProtocol.sendState` omits it) — the server still
+  processes them;
+* a status poll issued while the new file is loading reports the **old file's** position.
+
+Both used to consume a one-shot "file changed" flag, after which the genuine `00:00` report looked
+like a backwards teleport, unestablished the watcher and got it force-seeked to the room position —
+which was still the end of the file it had just finished. With two same-length episodes that lands
+exactly at the end of the new one; with a longer next file it lands at the old file's end timestamp
+mid-episode; with a shorter one it clamps to EOF and can advance the playlist again.
+
+So the flag is a **latch**, not a one-shot: armed by `Watcher.setFile`, held across playstate-less
+States and across reports the old file's position can still account for (within
+`JOIN_SYNC_TOLERANCE` of where that file would be now), and released by the first report the old
+file cannot explain — or by `FILE_CHANGE_REPORT_GRACE` expiring, so a file that resumes exactly
+where the last one stopped cannot leave the teleport guard disabled forever.
+
 "Meaningful position" distinguishes a room that is genuinely somewhere from one whose position is
 just an unused default zero. It becomes true when an established watcher defines the position, when
 somebody entitled to control the room seeks it, or when the room is restored from the rooms
@@ -90,6 +115,7 @@ All in `syncplay/constants.py`:
 | `JOIN_PULL_INTERVAL` | `2.0` | Minimum gap between catch-up seeks to one watcher |
 | `JOIN_PULL_GRACE` | `15.0` | How long an unreachable stored position is defended |
 | `POSITION_TELEPORT_GUARD` | `30.0` | Backwards jump that counts as a player restart |
+| `FILE_CHANGE_REPORT_GRACE` | `10.0` | How long a file change waits for the new file's first position report |
 | `CLIENT_SYNC_ON_FILE_LOAD_THRESHOLD` | `5.0` | How far ahead the room must be for a client to seek a freshly loaded file to it |
 
 ## Interoperability

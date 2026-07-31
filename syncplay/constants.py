@@ -88,6 +88,7 @@ JOIN_SYNC_TOLERANCE = 5.0  # Secs - how close to the room position a report must
 JOIN_PULL_INTERVAL = 2.0  # Secs - minimum gap between the forced catch-up seeks sent to an out-of-sync watcher
 JOIN_PULL_GRACE = 15.0  # Secs - if nobody in the room is in sync and the stored position stays unreachable, accept the straggler's position after this long
 POSITION_TELEPORT_GUARD = 30.0  # Secs - a backwards jump larger than this, on an unchanged file and without a seek, is a player restart rather than playback
+FILE_CHANGE_REPORT_GRACE = 10.0  # Secs - how long after a file change the server keeps waiting for the first position report from the new file before giving up on it
 CLIENT_SYNC_ON_FILE_LOAD_THRESHOLD = 5.0  # Secs - how far ahead the room must be for a client to seek a newly loaded file to the room position on join
 
 # Server-side chat commands (first-token match, intercepted in SyncFactory.sendChat)
