@@ -30,6 +30,11 @@ stock clients and servers** — new behavior is opt-in, feature-flagged, and alw
   is demonstrably at it (`Watcher._positionEstablished`, `Room.getPositionReferences`); anyone
   else is seeked to the room (`SyncFactory.pullWatcherIntoSync`) instead of dragging it to 00:00.
   Fixes joins/rejoins/player restarts rewinding the room. Server-side, so stock clients get it too.
+- **Flaky-link sync hardening** (always on, no flag): the forward-delay estimate (`PingService`) is
+  outlier-rejected, asymmetry-smoothed and clamped; `messageAge` is capped (`MAX_MESSAGE_AGE`) at
+  both points where it is added to a position; the rewind/slowdown reactions require sustained
+  evidence (`_desyncSustainedFor`), like fast-forward always has. Stops link jitter from seeking or
+  speed-shifting a client that is actually in sync. No wire change — each side estimates locally.
 
 ## Running & building
 
@@ -207,7 +212,8 @@ these patterns (they found real bugs every time):
   config: defaults/ini/CLI), `GuiConfiguration.py` (Qt settings dialog).
 - `syncplay/resources/syncplayintf.lua` — the mpv-side half of every mpv feature.
 - `syncplay/messages*.py` — i18n; `syncplay/constants.py` — all constants.
-- `docs/yap-timer-and-pause-warning.md`, `docs/server-admins.md`, `docs/join-position-guard.md`
+- `docs/yap-timer-and-pause-warning.md`, `docs/server-admins.md`, `docs/join-position-guard.md`,
+  `docs/flaky-link-sync.md`
   — fork feature docs.
 - `Dockerfile`/`.dockerignore` — server container; `ci/`, `buildPy2exe.py`, `buildPy2app.py`,
   `GNUmakefile` — packaging.

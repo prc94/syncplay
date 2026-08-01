@@ -21,6 +21,7 @@ python3 tests/suite_admin.py          # any suite runs standalone
 | `suite_joinguard.py` | Join position guard: reference-set filtering, catch-up/teleport/give-up rules, locked + controlled rooms, pull rate limiting, client seek-on-file-load |
 | `suite_fileswitch.py` | Advancing to the next file: the file-change latch vs. playstate-less/stale States, latch expiry, teleport guard and join pulls still intact |
 | `suite_joinprop.py` | Join-time propagation of room state: Hello-vs-Set ordering, domain-overlay reset ownership, track proposals queued until the player is up, player-less chat, cache eviction |
+| `suite_lag.py` | Flaky-link sync hardening: `PingService` outlier/asymmetry/clamp behaviour, `messageAge` caps, sustained-desync gating, plus a bidirectional link simulation asserting an in-sync client is never seeked or speed-shifted while a real desync still converges |
 | `suite_lua.py` | `syncplayintf.lua` static checks (declaration order, block balance, render order) + Python-ported simulations (blink timing, layout signatures) |
 | `suite_e2e*.py` | Live-server scenarios: real `syncplayServer.py` subprocesses driven by protocol-faithful socket clients |
 

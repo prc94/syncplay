@@ -11,6 +11,7 @@ from twisted.python.versions import Version
 from zope.interface.declarations import implementer
 
 import syncplay
+from syncplay import constants
 from syncplay.constants import PING_MOVING_AVERAGE_WEIGHT, CONTROLLED_ROOMS_MIN_VERSION, USER_READY_MIN_VERSION, SHARED_PLAYLIST_MIN_VERSION, CHAT_MIN_VERSION, UNKNOWN_UI_MODE
 from syncplay.messages import getMessage
 from syncplay.utils import meetsMinVersion
@@ -278,6 +279,7 @@ class SyncClientProtocol(JSONCommandProtocol):
         return position, paused, doSeek, setBy
 
     def _handleStatePing(self, state):
+        latencyCalculation = None  # a State whose ping block omits it must not blow up the handler
         if "latencyCalculation" in state["ping"]:
             latencyCalculation = state["ping"]["latencyCalculation"]
         if "clientLatencyCalculation" in state["ping"]:
@@ -289,6 +291,7 @@ class SyncClientProtocol(JSONCommandProtocol):
 
     def handleState(self, state):
         position, paused, doSeek, setBy = None, None, None, None
+        latencyCalculation = None  # sendState below reads it even when the State carried no ping block
         messageAge = 0
         if not self.hadFirstStateUpdate:
             self.hadFirstStateUpdate = True
@@ -886,11 +889,19 @@ class SyncServerProtocol(JSONCommandProtocol):
 
 
 class PingService(object):
+    """Estimates the one-way (forward) delay of incoming State messages.
+
+    The estimate is consumed as `position += messageAge`, so it is only ever allowed to be
+    approximately right - a wrong estimate does not merely fail to compensate, it actively moves
+    the listener's idea of where the room is. Everything here is therefore biased towards
+    under-compensating rather than trusting a noisy sample.
+    """
 
     def __init__(self):
         self._rtt = 0
         self._fd = 0
         self._avrRtt = 0
+        self._avrAsymmetry = 0
 
     def newTimestamp(self):
         return time.time()
@@ -898,16 +909,33 @@ class PingService(object):
     def receiveMessage(self, timestamp, senderRtt):
         if not timestamp:
             return
-        self._rtt = time.time() - timestamp
-        if self._rtt < 0 or senderRtt < 0:
+        rtt = time.time() - timestamp
+        if rtt < 0 or senderRtt < 0:
             return
+        self._rtt = rtt
         if not self._avrRtt:
-            self._avrRtt = self._rtt
-        self._avrRtt = self._avrRtt * PING_MOVING_AVERAGE_WEIGHT + self._rtt * (1 - PING_MOVING_AVERAGE_WEIGHT)
-        if senderRtt < self._rtt:
-            self._fd = self._avrRtt / 2 + (self._rtt - senderRtt)
-        else:
-            self._fd = self._avrRtt / 2
+            self._avrRtt = rtt
+
+        # A round trip far above the running average is a congestion/retransmit spike. It is real,
+        # but it describes one packet rather than the path, so it is kept out of the estimate
+        # instead of being allowed to define it.
+        isOutlier = rtt > self._avrRtt * constants.PING_OUTLIER_FACTOR + constants.PING_OUTLIER_MARGIN
+        weight = constants.PING_OUTLIER_AVERAGE_WEIGHT if isOutlier else PING_MOVING_AVERAGE_WEIGHT
+        self._avrRtt = self._avrRtt * weight + rtt * (1 - weight)
+
+        # Asymmetry correction: if our round trip consistently exceeds the peer's, the extra delay
+        # plausibly sits in the forward direction and belongs in the estimate. "Consistently" is
+        # the operative word - senderRtt was measured by the peer at a different moment, so on a
+        # jittery link a single difference between the two samples is noise. It is clamped, then
+        # smoothed, and it decays back to zero as soon as the evidence stops.
+        asymmetry = 0
+        if senderRtt > 0 and not isOutlier and senderRtt < rtt:
+            asymmetry = min(rtt - senderRtt, constants.PING_MAX_ASYMMETRY_CORRECTION)
+        self._avrAsymmetry = self._avrAsymmetry * PING_MOVING_AVERAGE_WEIGHT \
+            + asymmetry * (1 - PING_MOVING_AVERAGE_WEIGHT)
+
+        forwardDelay = self._avrRtt / 2 + self._avrAsymmetry
+        self._fd = max(0.0, min(forwardDelay, constants.PING_MAX_FORWARD_DELAY))
 
     def getLastForwardDelay(self):
         return self._fd

@@ -91,6 +91,24 @@ POSITION_TELEPORT_GUARD = 30.0  # Secs - a backwards jump larger than this, on a
 FILE_CHANGE_REPORT_GRACE = 10.0  # Secs - how long after a file change the server keeps waiting for the first position report from the new file before giving up on it
 CLIENT_SYNC_ON_FILE_LOAD_THRESHOLD = 5.0  # Secs - how far ahead the room must be for a client to seek a newly loaded file to the room position on join
 
+# Latency-estimate hardening (see docs/flaky-link-sync.md). The forward-delay estimate is added
+# straight onto the reported position on both sides ("position += messageAge"), so an estimate that
+# overshoots by seconds teleports the room out from under a watcher. On a jittery link the two
+# endpoints' RTT samples are uncorrelated, which used to manufacture exactly that overshoot.
+PING_OUTLIER_FACTOR = 2.0  # A round trip this many times the running average (plus the margin below) is congestion, not the new steady-state latency
+PING_OUTLIER_MARGIN = 0.05  # Secs - absolute slack on top of PING_OUTLIER_FACTOR, so sub-ms LAN round trips do not flap in and out of "outlier"
+PING_OUTLIER_AVERAGE_WEIGHT = 0.98  # Moving-average weight applied to outlier samples: they still register, but barely move the average
+PING_MAX_ASYMMETRY_CORRECTION = 0.5  # Secs - most one-sample path asymmetry that may be believed; anything beyond this is jitter, not a genuinely lopsided route
+PING_MAX_FORWARD_DELAY = 1.5  # Secs - hard ceiling on the forward-delay estimate; past this the estimate is noise and compensating with it does more harm than not
+MAX_MESSAGE_AGE = 2.0  # Secs - ceiling applied where messageAge is added to a reported position, so no estimate (or hostile peer's timestamps) can teleport anyone
+
+# Sustained-desync requirement. A single State message is not evidence of a desync: reacting to one
+# sample is what turned link jitter into visible rewinds and speed changes. The fast-forward path
+# has always demanded sustained evidence (via behindFirstDetected); these give the rewind and
+# slowdown paths the same protection.
+REWIND_SUSTAIN_DURATION = 1.5  # Secs - how long the client must continuously measure itself past the rewind threshold before seeking back
+SLOWDOWN_SUSTAIN_DURATION = 1.5  # Secs - ditto before nudging playback speed down to bleed off a difference
+
 # Server-side chat commands (first-token match, intercepted in SyncFactory.sendChat)
 ADMIN_COMMAND = "/admin"  # /admin <password> - authenticate as server admin
 LOCK_COMMAND = "/lock"  # Admin: lock the current plain room (only admins control playback)

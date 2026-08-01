@@ -1825,7 +1825,10 @@ class Watcher(object):
 
     def _updatePositionByAge(self, messageAge, paused, position):
         if not paused:
-            position += messageAge
+            # Capped for the same reason the client caps it: a watcher on a jittery link produces
+            # noisy forward-delay estimates, and an uncapped one would land this watcher far ahead
+            # of where it really is - which then feeds the room's position references.
+            position += min(messageAge, constants.MAX_MESSAGE_AGE)
         return position
 
     def _evaluatePositionSync(self, position, previousPosition, doSeek, fileChanged):
