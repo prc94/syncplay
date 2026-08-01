@@ -151,6 +151,10 @@ don't hang room-wide file-change logic on it; per-watcher tracking (see
 `_remindTrackProposalOnFileChange`) is more robust. Match files by **track-layout signature,
 never filename** (users watch different releases). Timers armed with `callLater`/`LoopingCall`
 must be cancelled in the room-empty cleanup and guarded against firing on emptied rooms.
+**"The next `State` to arrive" is never the report you mean** — a client that is ignoring on the
+fly sends playstate-less `State`s, and a status poll issued mid-load carries the *old* file's
+position. Anything keyed to "the first report after event X" must be a latch released by evidence
+(a position the old file cannot explain) with a timeout, not a one-shot flag (`_consumeFileChange`).
 
 ## Testing the fork
 
