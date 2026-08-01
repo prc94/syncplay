@@ -145,6 +145,7 @@ class SyncplayClient(object):
         self._userOffset = 0.0
         self._speedChanged = False
         self.behindFirstDetected = None
+        self._desyncSince = {}  # Desync condition -> when it was first continuously observed; see _desyncSustainedFor
         self.autoPlay = False
         self.autoPlayThreshold = None
 
@@ -422,10 +423,30 @@ class SyncplayClient(object):
         self.ui.showMessage(message, hideFromOSD)
         return madeChangeOnPlayer
 
+    def _desyncSustainedFor(self, key, active, duration):
+        """Whether a desync condition has held continuously for `duration`.
+
+        One State message is not evidence. The position it carries is corrected by a latency
+        estimate, and on an unstable link that estimate moves around, so acting on a single sample
+        turns link jitter into visible seeks and speed changes. This mirrors the sustained-evidence
+        pattern the fast-forward path has always used via `behindFirstDetected`.
+        """
+        if not active:
+            self._desyncSince[key] = None
+            return False
+        if self._desyncSince.get(key) is None:
+            self._desyncSince[key] = time.time()
+            return False
+        return time.time() - self._desyncSince[key] >= duration
+
+    def _clearSustainedDesync(self, key):
+        self._desyncSince[key] = None
+
     def _slowDownToCoverTimeDifference(self, diff, setBy):
         hideFromOSD = not constants.SHOW_SLOWDOWN_OSD
         madeChangeOnPlayer = False
-        if self._config['slowdownThreshold'] < diff and not self._speedChanged:
+        wantsSlowdown = self._config['slowdownThreshold'] < diff and not self._speedChanged
+        if self._desyncSustainedFor("slowdown", wantsSlowdown, constants.SLOWDOWN_SUSTAIN_DURATION):
             if self.getUsername() == setBy:
                 self.ui.showDebugMessage("Caught attempt to slow down due to time difference with self")
             else:
@@ -451,8 +472,10 @@ class SyncplayClient(object):
         self._lastGlobalUpdate = time.time()
         if doSeek:
             madeChangeOnPlayer = self._serverSeeked(position, setBy)
-        if diff > self._config['rewindThreshold'] and not doSeek and not self._config['rewindOnDesync'] == False:
+        rewindWanted = diff > self._config['rewindThreshold'] and not doSeek and not self._config['rewindOnDesync'] == False
+        if self._desyncSustainedFor("rewind", rewindWanted, constants.REWIND_SUSTAIN_DURATION):
             madeChangeOnPlayer = self._rewindPlayerDueToTimeDifference(position, setBy)
+            self._clearSustainedDesync("rewind")
         if self._config['fastforwardOnDesync'] and (self.userlist.currentUser.canControl() == False or self._config['dontSlowDownWithMe'] == True):
             if diff < (constants.FASTFORWARD_BEHIND_THRESHOLD * -1) and not doSeek:
                 if self.behindFirstDetected is None:
@@ -484,7 +507,7 @@ class SyncplayClient(object):
             self.getUserList()
         madeChangeOnPlayer = False
         if not paused:
-            position += messageAge
+            position += min(messageAge, constants.MAX_MESSAGE_AGE)
         if self._player:
             madeChangeOnPlayer = self._changePlayerStateAccordingToGlobalState(position, paused, doSeek, setBy)
         if madeChangeOnPlayer:
