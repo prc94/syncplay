@@ -116,6 +116,73 @@ check(SCEN, "no cross-room leak of C's activity",
       and not any(m.startswith("modC") for _, m in evts(B, "chat") if isinstance(m, str)),
       repr(lock_notices_B))
 
+# 8. locked room: pause/unpause in the player is a readiness toggle, not a control attempt
+D = MiniClient("dAdmin", "lockready", "1.7.6", {"chat": True}, role="leader",
+               file_={"name": "m.mkv", "duration": 100, "size": 500})
+E = MiniClient("eStock", "lockready", "1.7.6", {"chat": True}, role="leader",          # stock client
+               file_={"name": "m.mkv", "duration": 100, "size": 500})
+F = MiniClient("fModded", "lockready", "1.7.6", {"chat": True, "roomLock": True}, role="leader",
+               file_={"name": "m.mkv", "duration": 100, "size": 500})
+for c in (D, E, F):
+    c.connect(19041)
+assert pump_until([D, E, F], lambda: D.hello and E.hello and F.hello), "D/E/F hello"
+t8 = time.time()
+for c in (D, E, F):
+    c.t0 = t8
+
+# Everyone settles at the room position first: an unestablished watcher, or one whose file is still
+# loading, is treated as player noise. Reporting a position the freshly-set file cannot explain is
+# what tells the server the file is up (see Watcher._consumeFileChange).
+for c in (D, E, F):
+    c.desired = False
+pump_for([D, E, F], 0.8)
+for c in (D, E, F):
+    c.position = 12.0
+pump_for([D, E, F], 1.2)
+
+D.send({"Chat": "/admin S3cret"})
+assert pump_until([D, E, F], lambda: chats_matching(D, "You are now a server admin"))
+D.send({"Chat": "/lock"})
+assert pump_until([D, E, F], lambda: chats_matching(E, "locked this room"))
+locks = [v for _, v in sets_of(F, "roomLock")]
+check(SCEN, "capable client got Set:roomLock on /lock",
+      any(v.get("locked") is True and v.get("room") == "lockready" for v in locks), repr(locks))
+check(SCEN, "stock client got no Set:roomLock", not sets_of(E, "roomLock"))
+
+readies_before = len([v for _, v in sets_of(F, "ready") if v.get("username") == "eStock"])
+press_start = time.time() - t8
+E.desired = True                      # stock client presses pause in its player
+got_toggle = pump_until([D, E, F], lambda: len(
+    [v for _, v in sets_of(F, "ready") if v.get("username") == "eStock"]) > readies_before, timeout=4.0)
+eReadies = [v for _, v in sets_of(F, "ready") if v.get("username") == "eStock"]
+check(SCEN, "locked: stock client's pause became a readiness toggle", got_toggle, repr(eReadies))
+check(SCEN, "locked: readiness went to ready", eReadies and eReadies[-1].get("isReady") is True, repr(eReadies))
+check(SCEN, "locked: the pause itself never became room state",
+      not [s for (t, s) in states_of(D) if t >= press_start and s is True], repr(states_of(D)[-3:]))
+
+# one keypress, one toggle: the client keeps repeating the rejected pause until the revert lands
+pump_for([D, E, F], 2.0)
+eReadies = [v for _, v in sets_of(F, "ready") if v.get("username") == "eStock"]
+check(SCEN, "locked: a repeated rejected pause does not flap readiness",
+      len(eReadies) == readies_before + 1, repr(eReadies))
+
+# a client that tracks the lock itself is left alone by the server-side fallback
+fReadies_before = len([v for _, v in sets_of(E, "ready") if v.get("username") == "fModded"])
+F.desired = True
+pump_for([D, E, F], 2.0)
+fReadies = [v for _, v in sets_of(E, "ready") if v.get("username") == "fModded"]
+check(SCEN, "locked: capable client gets no server-side readiness toggle",
+      len(fReadies) == fReadies_before, repr(fReadies))
+
+D.send({"Chat": "/unlock"})
+assert pump_until([D, E, F], lambda: chats_matching(E, "unlocked"))
+locks = [v for _, v in sets_of(F, "roomLock")]
+check(SCEN, "capable client got Set:roomLock on /unlock",
+      locks and locks[-1].get("locked") is False, repr(locks))
+
+for c in (D, E, F):
+    c.close()
+
 for c in (A, B, C):
     c.close()
 srv.clean_log(SCEN)

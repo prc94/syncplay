@@ -646,8 +646,11 @@ class MainWindow(QtWidgets.QMainWindow):
             roomitem.setFlags(roomitem.flags() & ~Qt.ItemIsEditable)
             usertreeRoot.appendRow(roomitem)
             isControlledRoom = RoomPasswordProvider.isControlledRoom(room)
+            # A plain room an admin has locked is shown like a managed one, so it is visible why
+            # playback cannot be controlled here.
+            isLockedRoom = isControlledRoom or self._syncplayClient.userlist.isRoomLocked(room)
 
-            if isControlledRoom:
+            if isLockedRoom:
                 if room == currentUser.room and currentUser.isController():
                     roomitem.setIcon(QtGui.QPixmap(resourcespath + 'lock_open.png'))
                 else:
@@ -714,7 +717,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 if currentUser.username == user.username:
                     font.setWeight(QtGui.QFont.Bold)
                     self.updateReadyAfkRadio(currentUser.isReady(), currentUser.isAfk())
-                if isControlledRoom and not isController:
+                if isLockedRoom and not isController:
                     useritem.setForeground(QtGui.QBrush(QtGui.QColor(constants.STYLE_NOTCONTROLLER_COLOR)))
                 useritem.setFont(font)
                 useritem.setFlags(useritem.flags() & ~Qt.ItemIsEditable)

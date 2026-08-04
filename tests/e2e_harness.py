@@ -22,6 +22,7 @@ class MiniClient:
         self.role, self.schedule, self.file_ = role, list(schedule or []), file_
         self.sock = None; self.buf = b""
         self.desired = None            # our reported paused state (None until we adopt one)
+        self.position = 5.0            # reported position; move it to imitate playback progressing
         self.server_iotf = 0           # ignoringOnTheFly counter to echo back
         self.hello = False
         self.events = []               # (t_rel, kind, payload)
@@ -101,7 +102,7 @@ class MiniClient:
             self.last_send = now
             state = {"State": {"ping": {"clientRtt": 0}}}
             if self.desired is not None:
-                state["State"]["playstate"] = {"position": 5.0, "paused": self.desired, "doSeek": False}
+                state["State"]["playstate"] = {"position": self.position, "paused": self.desired, "doSeek": False}
             if self.server_iotf:
                 state["State"]["ignoringOnTheFly"] = {"server": self.server_iotf}
                 self.server_iotf = 0

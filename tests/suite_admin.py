@@ -357,6 +357,229 @@ check("featureList advertises serverAdmin=True when enabled", feats.get("serverA
 pf.adminPassword = None
 check("featureList serverAdmin=False when disabled", SyncFactory.getFeatures(pf).get("serverAdmin") is False)
 
+# ---------- locked rooms: pause/unpause in the player toggles readiness ----------
+class FWL(FW):
+    """FW that records the Set:roomLock messages it is sent."""
+    def __init__(self, *a, **kw):
+        FW.__init__(self, *a, **kw)
+        self.roomLocks = []
+    def sendRoomLock(self, roomName, locked, setBy=None):
+        self.roomLocks.append((roomName, locked, setBy))
+
+lf = make_factory(adminPassword="pw")
+lf.roomsDbFile = None
+lockAdmin = FWL("lockadm", admin=True, features={"roomLock": True})
+modded = FWL("modded", features={"roomLock": True})
+stock = FWL("stock")
+lroom = Room("lockme", None)
+for w in (lockAdmin, modded, stock):
+    w._room = lroom
+lroom._watchers = {w.getName(): w for w in (lockAdmin, modded, stock)}
+
+lf.sendChat(lockAdmin, "/lock")
+check("/lock: capable clients get Set:roomLock(locked)",
+      modded.roomLocks == [("lockme", True, "lockadm")], repr(modded.roomLocks))
+check("/lock: stock client gets chat only, no Set:roomLock",
+      stock.roomLocks == [] and any("locked this room" in c for c in stock.chats), repr(stock.chats))
+lf.sendChat(lockAdmin, "/unlock")
+check("/unlock: capable clients get Set:roomLock(unlocked)",
+      modded.roomLocks[-1] == ("lockme", False, "lockadm"), repr(modded.roomLocks))
+
+lroom.setLocked(True)
+modded.roomLocks.clear(); stock.roomLocks.clear()
+lf.sendRoomStateToWatcher(modded)
+check("join/room switch: current lock state pushed to a capable client",
+      modded.roomLocks == [("lockme", True, None)], repr(modded.roomLocks))
+lf.sendRoomStateToWatcher(stock)
+check("join: nothing pushed to a client that cannot use it", stock.roomLocks == [])
+lroom.setLocked(False)
+modded.roomLocks.clear()
+lf.sendRoomStateToWatcher(modded)
+check("join into an unlocked room still says locked=False (clears a stale lock)",
+      modded.roomLocks == [("lockme", False, None)], repr(modded.roomLocks))
+
+# Server-side fallback: a stock client's rejected pause becomes a readiness toggle.
+fbServer = mock.Mock(); fbServer.disableReady = False
+fbConn = mock.Mock(); fbConn.isLogged.return_value = True; fbConn.getFeatures.return_value = {}
+fbw = Watcher(fbServer, fbConn, "stocky")
+if fbw._sendStateTimer and fbw._sendStateTimer.running: fbw._sendStateTimer.stop()
+fbRoom = Room("fb", None); fbRoom._watchers = {"stocky": fbw}; fbw._room = fbRoom
+fbw._positionEstablished = True
+
+def roomPlaystate(paused):
+    fbRoom.setLocked(False)  # set the room's own state without an admin watcher in the way
+    fbRoom.setPaused(Room.STATE_PAUSED if paused else Room.STATE_PLAYING, user)
+    fbRoom.setLocked(True)
+    fbw._lockedPauseLatch = None
+
+roomPlaystate(paused=True)
+fbServer.setReady.reset_mock()
+fbw.updateState(None, False, False, 0)   # "I pressed play while the room is paused"
+check("locked + stock client: rejected unpause toggles readiness",
+      fbServer.setReady.call_args is not None and fbServer.setReady.call_args[0] == (fbw, True),
+      repr(fbServer.setReady.call_args))
+check("locked + stock client: the pause itself is still not the room's",
+      fbRoom.isPaused() is True)
+
+fbServer.setReady.reset_mock()
+fbw.updateState(None, False, False, 0)   # same rejected state repeated before the revert lands
+check("repeat of the same rejected pause does not flip readiness again",
+      fbServer.setReady.call_args is None, repr(fbServer.setReady.call_args))
+
+fbw.updateState(None, True, False, 0)    # client accepted the revert: agrees with the room again
+fbServer.setReady.reset_mock()
+fbw.updateState(None, False, False, 0)
+check("a fresh keypress after agreeing with the room toggles again",
+      fbServer.setReady.call_args is not None, repr(fbServer.setReady.call_args))
+
+roomPlaystate(paused=False)
+fbServer.setReady.reset_mock()
+fbw.updateState(None, True, False, 0)    # "I pressed pause while the room is playing"
+check("locked + stock client: rejected pause toggles readiness too",
+      fbServer.setReady.call_args is not None, repr(fbServer.setReady.call_args))
+
+roomPlaystate(paused=True)
+fbConn.getFeatures.return_value = {"roomLock": True}
+fbServer.setReady.reset_mock()
+fbw.updateState(None, False, False, 0)
+check("client that tracks the lock itself gets no server-side toggle",
+      fbServer.setReady.call_args is None, repr(fbServer.setReady.call_args))
+fbConn.getFeatures.return_value = {}
+
+roomPlaystate(paused=True)
+fbw._positionEstablished = False
+fbServer.setReady.reset_mock()
+fbw.updateState(None, False, False, 0)
+check("(re)joining watcher: no toggle until its position is established",
+      fbServer.setReady.call_args is None, repr(fbServer.setReady.call_args))
+fbw._positionEstablished = True
+
+roomPlaystate(paused=True)
+fbw._fileChangedAt = time.time()
+fbServer.setReady.reset_mock()
+fbw.updateState(None, False, False, 0)
+check("file just loaded: player noise is not a keypress",
+      fbServer.setReady.call_args is None, repr(fbServer.setReady.call_args))
+fbw._fileChangedAt = None
+
+fbRoom.setLocked(False)
+fbRoom.setPaused(Room.STATE_PAUSED, user)
+fbw._lockedPauseLatch = None
+fbServer.setReady.reset_mock()
+fbw.updateState(None, False, False, 0)
+check("unlocked room: pause is a real pause, never a readiness toggle",
+      fbServer.setReady.call_args is None and fbRoom.isPlaying(), repr(fbServer.setReady.call_args))
+fbRoom.setLocked(True)
+
+# Client: the lock reaches canControl, which is what re-routes the keypress.
+from syncplay.client import SyncplayClient, SyncplayUser, SyncplayUserlist
+lu = SyncplayUser("me", "r")
+check("client user: unlocked plain room can be controlled", lu.canControl() is True)
+lu.setRoomLocked(True)
+check("client user: locked room cannot be controlled", lu.canControl() is False)
+lu.setControllerStatus(True)
+check("client user: an admin/operator still controls a locked room", lu.canControl() is True)
+
+ull = SyncplayUserlist.__new__(SyncplayUserlist)
+ull.currentUser = SyncplayUser("me", "r")
+ull._users = {}
+ull._roomUsersChanged = False
+ull.ui = types.SimpleNamespace(userListChange=lambda: None, showMessage=lambda *a, **k: None)
+ull._client = types.SimpleNamespace(autoplayCheck=lambda: None)
+ull.addUser("alice", "r", None, noMessage=True)
+ull.addUser("bob", "elsewhere", None, noMessage=True)
+ull.setRoomLocked("r", True)
+check("userlist: lock stamps only the users in that room",
+      ull.currentUser.isRoomLocked() and ull._users["alice"].isRoomLocked()
+      and not ull._users["bob"].isRoomLocked())
+ull.addUser("carol", "r", None, noMessage=True)
+check("userlist: someone joining a locked room is stamped", ull._users["carol"].isRoomLocked())
+ull.modUser("carol", "elsewhere", None)
+check("userlist: leaving a locked room clears the stamp", ull._users["carol"].isRoomLocked() is False)
+ull.setRoomLocked("r", False)
+check("userlist: unlock clears the stamps",
+      not ull.currentUser.isRoomLocked() and not ull._users["alice"].isRoomLocked())
+ull.setRoomLocked("r", True)
+ull.clearRoomLocks()
+check("userlist: reconnect clears every lock",
+      not ull.isRoomLocked("r") and not ull.currentUser.isRoomLocked())
+
+cprot = SyncClientProtocol.__new__(SyncClientProtocol)
+routedLocks = []
+cprot._client = types.SimpleNamespace(setRoomLocked=lambda *a: routedLocks.append(a))
+cprot.handleSet({"roomLock": {"room": "r", "locked": True, "setBy": "adm"}})
+check("client handleSet routes roomLock", routedLocks == [("r", True, "adm")], repr(routedLocks))
+cprot.handleSet({"roomLock": {"room": "r"}})
+check("client handleSet roomLock without 'locked' is safely False",
+      routedLocks[-1] == ("r", False, None), repr(routedLocks))
+
+# Client: _toggleReady in a locked room - both directions, and only for real keypresses.
+def run_locked_toggle(globalPaused, playerPaused, ready=False, isController=False,
+                      rewoundAt=None, connectedAt=None, fileAt=None, locked=True):
+    # playerPaused is what the player has just reported - updatePlayerStatus has already stored it
+    # and passes the same value in, so the two always agree on entry.
+    c = SyncplayClient.__new__(SyncplayClient)
+    cu = SyncplayUser("me", "r")
+    cu.setReady(ready); cu.setRoomLocked(locked); cu.setControllerStatus(isController)
+    c.userlist = types.SimpleNamespace(currentUser=cu)
+    rec = []
+    c._player = types.SimpleNamespace(setPaused=lambda v: rec.append(("player.setPaused", v)))
+    c.ui = types.SimpleNamespace(showMessage=lambda m, *a, **k: rec.append(("msg", m)),
+                                 showDebugMessage=lambda m: None)
+    c.toggleReady = lambda manuallyInitiated=True: rec.append(("toggleReady", manuallyInitiated))
+    c.changeReadyState = lambda s, manuallyInitiated=True: rec.append(("changeReadyState", s))
+    c._config = {"unpauseAction": constants.UNPAUSE_ALWAYS_MODE}
+    c.serverFeatures = {"readiness": True}
+    c._globalPaused = globalPaused
+    c._playerPaused = playerPaused
+    c._lastPlayerUpdate = time.time()
+    c._lastGlobalUpdate = time.time()
+    c.lastRewindTime = rewoundAt
+    c.lastUpdatedFileTime = fileAt
+    c.lastConnectTime = connectedAt if connectedAt is not None else time.time() - 3600
+    c.lastAdvanceTime = None
+    c.lastPausedOnLeaveTime = None
+    out = c._toggleReady(True, playerPaused)
+    return rec, out, c
+
+# room paused, user presses play: the point of the whole feature
+rec, out, c = run_locked_toggle(globalPaused=True, playerPaused=False)
+check("locked room: play while paused toggles readiness",
+      ("toggleReady", True) in rec, repr(rec))
+check("locked room: the player is put back to the room's state",
+      ("player.setPaused", True) in rec and c._playerPaused is True, repr(rec))
+check("locked room: the pause change is never sent on", out is False)
+check("locked room: not-ready user is told they are now ready",
+      ("msg", M.messages["en"]["set-as-ready-notification"]) in rec, repr(rec))
+
+# room playing, user presses pause
+rec, out, c = run_locked_toggle(globalPaused=False, playerPaused=True, ready=True)
+check("locked room: pause while playing toggles readiness",
+      ("toggleReady", True) in rec and c._playerPaused is False, repr(rec))
+check("locked room: ready user is told they are now not ready",
+      ("msg", M.messages["en"]["set-as-not-ready-notification"]) in rec, repr(rec))
+
+# noise: nothing the user did
+for label, kwargs in (("just rewound", {"rewoundAt": time.time()}),
+                      ("just connected", {"connectedAt": time.time()}),
+                      ("file just loaded", {"fileAt": time.time()})):
+    rec, out, c = run_locked_toggle(globalPaused=True, playerPaused=False, **kwargs)
+    check("locked room: {} is player noise, not a keypress".format(label),
+          not any(e[0] == "toggleReady" for e in rec) and not any(e[0] == "msg" for e in rec), repr(rec))
+    check("locked room: {} still snaps the player back".format(label),
+          ("player.setPaused", True) in rec, repr(rec))
+
+# an admin in a locked room keeps ordinary control (no readiness re-routing)
+rec, out, c = run_locked_toggle(globalPaused=True, playerPaused=False, isController=True)
+check("locked room: an admin takes the ordinary control path, not the readiness one",
+      not any(e[0] == "toggleReady" for e in rec) and not any(e[0] == "player.setPaused" for e in rec),
+      repr(rec))
+
+# and an unlocked room is untouched by any of this
+rec, out, c = run_locked_toggle(globalPaused=False, playerPaused=True, locked=False)
+check("unlocked room: upstream readiness handling is unchanged",
+      not any(e[0] == "toggleReady" for e in rec) and ("changeReadyState", False) in rec, repr(rec))
+
 # ---------- i18n ----------
 keys = ["server-admin-password-argument", "client-admin-password-argument",
         "admin-login-success-chat-message", "admin-login-fail-chat-message",

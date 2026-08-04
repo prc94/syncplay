@@ -222,6 +222,8 @@ class SyncClientProtocol(JSONCommandProtocol):
                 self._client.setServerTrustedDomains(values)
             elif command == "afk":
                 self._client.setAfk(values.get("username"), bool(values.get("isAfk")), values.get("setBy"))
+            elif command == "roomLock":
+                self._client.setRoomLocked(values.get("room"), bool(values.get("locked")), values.get("setBy"))
 
     def sendFeaturesUpdate(self, features):
         self.sendSet({"features": features})
@@ -716,6 +718,12 @@ class SyncServerProtocol(JSONCommandProtocol):
             self.sendSet({"afk": {"username": username, "isAfk": isAfk, "setBy": setBy}})
         else:
             self.sendSet({"afk": {"username": username, "isAfk": isAfk}})
+
+    def sendRoomLock(self, roomName, locked, setBy=None):
+        if setBy:
+            self.sendSet({"roomLock": {"room": roomName, "locked": locked, "setBy": setBy}})
+        else:
+            self.sendSet({"roomLock": {"room": roomName, "locked": locked}})
 
     def setPlaylist(self, username, files):
         self.sendSet({
