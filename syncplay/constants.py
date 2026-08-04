@@ -114,6 +114,7 @@ ADMIN_COMMAND = "/admin"  # /admin <password> - authenticate as server admin
 LOCK_COMMAND = "/lock"  # Admin: lock the current plain room (only admins control playback)
 UNLOCK_COMMAND = "/unlock"  # Admin: unlock the current room
 TOGGLE_LOCK_COMMAND = "/togglelock"  # Admin: toggle the current plain room's lock (Ctrl+L keybind-driven)
+ROOM_LOCK_READY_TOGGLE_GRACE = 3.0  # Secs after a file change during which a pause change in a locked room is player noise, not a keypress
 AFK_COMMAND = "/afk"  # Toggle AFK state (stock clients; modded clients intercept /afk locally)
 INFO_COMMAND = "/info"  # Report current server-side room/config state privately to the sender
 INFO_FULL_ARGUMENT = "full"  # /info full - also include server configuration (admins/operators)

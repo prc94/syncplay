@@ -317,7 +317,37 @@ class SyncplayClient(object):
             lastRewindTime = self.lastRewindTime - 4.5
         return lastRewindTime is not None and abs(time.time() - lastRewindTime) < recentRewindThreshold
 
+    def _pauseChangeIsPlayerNoise(self):
+        # A pause change nobody pressed a key for: the seek back to the room position, the first
+        # seconds after connecting, and a file that has just finished loading (players start playing
+        # of their own accord, which reads as an unpause while the room is paused).
+        if self.recentlyRewound() or self.recentlyConnected():
+            return True
+        return self.lastUpdatedFileTime is not None \
+            and time.time() - self.lastUpdatedFileTime < constants.ROOM_LOCK_READY_TOGGLE_GRACE
+
+    def _toggleReadyInLockedRoom(self):
+        """Turn a pause keypress into a readiness toggle while a server admin has the room locked.
+
+        Playback belongs to the admins, so the player goes straight back to the room's state and the
+        pause change is never sent (the server would only reject and revert it). Unlike the managed-
+        room branch below this toggles in both directions - pressing play in a paused room is exactly
+        how you say "I am ready" - so player noise has to be filtered out explicitly instead.
+        """
+        self._player.setPaused(self._globalPaused)
+        self._playerPaused = self._globalPaused
+        if self._pauseChangeIsPlayerNoise():
+            return False
+        if self.userlist.currentUser.isReady():
+            self.ui.showMessage(getMessage("set-as-not-ready-notification"))
+        else:
+            self.ui.showMessage(getMessage("set-as-ready-notification"))
+        self.toggleReady(manuallyInitiated=True)
+        return False
+
     def _toggleReady(self, pauseChange, paused):
+        if self.userlist.currentUser.isRoomLocked() and not self.userlist.currentUser.isController():
+            return self._toggleReadyInLockedRoom()
         if not self.userlist.currentUser.canControl():
             self._player.setPaused(self._globalPaused)
             if not self.recentlyRewound() and not ((self._globalPaused == True) and not self._recentlyAdvanced()):
@@ -910,6 +940,7 @@ class SyncplayClient(object):
         features["trackProposals"] = self._trackProposalsSupported  # Can apply admin track proposals
         features["trustedDomains"] = True  # Can receive admin-published trusted domains (player-agnostic)
         features["afk"] = True  # Understands the AFK state channel (player-agnostic)
+        features["roomLock"] = True  # Tracks admin room locks itself (player-agnostic)
 
         return features
 
@@ -922,6 +953,7 @@ class SyncplayClient(object):
             self.storeControlPassword(roomName, password)
             self.ui.updateRoomName(roomName)
         self.userlist.currentUser.room = roomName
+        self.userlist.currentUser.setRoomLocked(self.userlist.isRoomLocked(roomName))  # a stale lock does not follow you into another room
         if resetAutoplay:
             self.resetAutoPlayState()
 
@@ -953,6 +985,7 @@ class SyncplayClient(object):
     def connected(self):
         self.lastConnectTime = time.time()
         self._syncedWithRoomSinceConnect = False  # reopens the join window: we may be nowhere near the room
+        self.userlist.clearRoomLocks()  # session-only state; the server re-sends it after the Hello
         readyState = self._config['readyAtStart'] if self.userlist.currentUser.isReady() is None else self.userlist.currentUser.isReady()
         self._protocol.setReady(readyState, manuallyInitiated=False)
         self.reIdentifyAsController()
@@ -1292,6 +1325,17 @@ class SyncplayClient(object):
                 else:
                     self.ui.showMessage(getMessage("other-afk-notification" if isAfk else "other-not-afk-notification").format(username))
 
+    def setRoomLocked(self, roomName, locked, setBy=None):
+        # Server-pushed lock state for a plain room (Set:roomLock). It makes canControl() false for
+        # everyone but admins, which is what turns a pause keypress into a readiness toggle - see
+        # _toggleReady. The room-wide "X locked this room" chat line is broadcast separately by the
+        # server, so nothing is announced here.
+        if not roomName:
+            return
+        self.userlist.setRoomLocked(roomName, locked)
+        self.ui.showDebugMessage("Room '{}' {} by {}".format(roomName, "locked" if locked else "unlocked", setBy))
+        self.ui.userListChange()
+
     @requireServerFeature("readiness")
     def toggleReady(self, manuallyInitiated=True):
         self._protocol.setReady(not self.userlist.currentUser.isReady(), manuallyInitiated)
@@ -1566,6 +1610,7 @@ class SyncplayUser(object):
         self.room = room
         self.file = file_
         self._controller = False
+        self._roomLocked = False  # Plain room locked by a server admin (see SyncplayUserlist.setRoomLocked)
         self._features = {}
 
     def setFile(self, filename, duration, size, path=None):
@@ -1603,8 +1648,18 @@ class SyncplayUser(object):
     def isController(self):
         return self._controller
 
+    def setRoomLocked(self, locked):
+        self._roomLocked = locked
+
+    def isRoomLocked(self):
+        return self._roomLocked
+
     def canControl(self):
-        if self.isController() or not utils.RoomPasswordProvider.isControlledRoom(self.room):
+        if self.isController():
+            return True  # room operator, or a server admin (the fork flags admins as controllers)
+        elif self._roomLocked:
+            return False  # plain room locked by a server admin: only admins control it
+        elif not utils.RoomPasswordProvider.isControlledRoom(self.room):
             return True
         else:
             return False
@@ -1631,6 +1686,10 @@ class SyncplayUser(object):
 
 
 class SyncplayUserlist(object):
+    # Rooms a server admin has locked, as last reported by the server. Class-level and replaced
+    # rather than mutated, so it reads sanely on a userlist that has not been through __init__.
+    _lockedRooms = frozenset()
+
     def __init__(self, ui, client):
         self.currentUser = SyncplayUser()
         self._users = {}
@@ -1651,6 +1710,29 @@ class SyncplayUserlist(object):
             return True
         else:
             return False
+
+    def setRoomLocked(self, roomName, locked):
+        # The lock is a property of the room, but canControl() is asked of a user, so it is stamped
+        # onto every user known to be in that room (and re-stamped whenever someone joins or moves).
+        lockedRooms = set(self._lockedRooms)
+        if locked:
+            lockedRooms.add(roomName)
+        else:
+            lockedRooms.discard(roomName)
+        self._lockedRooms = lockedRooms
+        for user in list(self._users.values()) + [self.currentUser]:
+            if user.room == roomName:
+                user.setRoomLocked(locked)
+
+    def isRoomLocked(self, roomName=None):
+        if roomName is None:
+            roomName = self.currentUser.room
+        return roomName in self._lockedRooms
+
+    def clearRoomLocks(self):
+        self._lockedRooms = frozenset()
+        for user in list(self._users.values()) + [self.currentUser]:
+            user.setRoomLocked(False)
 
     def __showUserChangeMessage(self, username, room, file_, oldRoom=None):
         if room:
@@ -1718,6 +1800,7 @@ class SyncplayUserlist(object):
         user = SyncplayUser(username, room, file_)
         if isController is not None:
             user.setControllerStatus(isController)
+        user.setRoomLocked(self.isRoomLocked(room))
         self._users[username] = user
         user.setReady(isReady)
         user.setAfk(isAfk)
@@ -1753,6 +1836,7 @@ class SyncplayUserlist(object):
             oldRoom = user.room if user.room else None
             if user.room != room:
                 user.setControllerStatus(isController=False)
+                user.setRoomLocked(self.isRoomLocked(room))
             self.__displayModUserMessage(username, room, file_, user, oldRoom)
             user.room = room
             if file_:

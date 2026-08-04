@@ -23,7 +23,11 @@ stock clients and servers** — new behavior is opt-in, feature-flagged, and alw
 - **Generic OSD channel** (`/osd`, `SyncFactory.sendOSDMessage`): styled/full-ASS one-shot messages.
 - **Server admins** (`--admin-password`/`SYNCPLAY_ADMIN_PASSWORD`): `/admin <pw>` in chat or
   auto-auth from modded clients (`adminPassword` client config, GUI field, `Set:adminAuth`);
-  controller authority everywhere, `/lock`//`/unlock` on plain rooms.
+  controller authority everywhere, `/lock`//`/unlock` on plain rooms. In a locked room a
+  pause/unpause keypress is a **readiness toggle** instead: capable clients learn the lock
+  (`Set:roomLock`, feature `roomLock`) so `SyncplayUser.canControl()` goes false and
+  `_toggleReadyInLockedRoom` handles it; everyone else's rejected pause is converted server-side in
+  `Watcher._readinessToggleFromRejectedPause` (latched per keypress).
 - **Track proposals**: admin publishes recommended audio/sub tracks (Ctrl+T in mpv or `/tracks`),
   applied by layout-signature match, per-watcher chat reminders for legacy clients.
 - **Join position guard** (always on, no flag): a watcher only defines the room position while it

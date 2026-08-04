@@ -187,6 +187,10 @@ class SyncFactory(Factory):
             self._sendTrackProposalToWatcher(watcher, latest)  # late joiners get the recommendation
         if room.getTrustedDomains() is not None:
             self._sendTrustedDomainsToWatcher(watcher, room.getTrustedDomains())  # late joiners get the domains
+        if watcher.supportsFeature("roomLock"):
+            # Sent whether or not the room is locked: a room switch has to clear the lock the client
+            # picked up in the room it came from, and a persistent room can already be locked on join.
+            watcher.sendRoomLock(room.getName(), room.isLocked())
 
     def sendRoomSwitchMessage(self, watcher):
         l = lambda w: w.sendSetting(watcher.getName(), watcher.getRoom(), None, None)
@@ -408,6 +412,15 @@ class SyncFactory(Factory):
         key = "room-locked-chat-message" if locked else "room-unlocked-chat-message"
         messageDict = {"message": getMessage(key).format(name), "username": name}
         self._roomManager.broadcastRoom(watcher, lambda w: w.sendChatMessage(messageDict))
+        self._broadcastRoomLock(room, setBy=name)
+
+    def _broadcastRoomLock(self, room, setBy=None):
+        # Capable clients track the lock so they stop trying to control a room they cannot control -
+        # and turn a pause keypress into a readiness toggle instead. Everyone else just gets the
+        # room-wide chat line above (plus the server-side fallback in Watcher.updateState).
+        for receiver in room.getWatchers():
+            if receiver.supportsFeature("roomLock"):
+                receiver.sendRoomLock(room.getName(), room.isLocked(), setBy)
 
     @staticmethod
     def _onOff(value):
@@ -1648,6 +1661,7 @@ class Watcher(object):
         self._unsyncedSince = None  # When it first reported an out-of-sync position that we have been unable to correct
         self._lastPositionPull = None  # Wall-clock time of the last catch-up seek we sent it
         self._fileChangedAt = None  # Set on every actual file change, so state handling can tell playback from a file switch
+        self._lockedPauseLatch = None  # Last rejected pause state already converted into a readiness toggle in a locked room
         self._connector.setWatcher(self)
         reactor.callLater(0.1, self._scheduleSendState)
 
@@ -1781,6 +1795,9 @@ class Watcher(object):
     def sendSetAfk(self, username, isAfk, setBy=None):
         self._connector.sendSetAfk(username, isAfk, setBy)
 
+    def sendRoomLock(self, roomName, locked, setBy=None):
+        self._connector.sendRoomLock(roomName, locked, setBy)
+
     def setPlaylistIndex(self, username, index):
         self._connector.setPlaylistIndex(username, index)
 
@@ -1902,6 +1919,29 @@ class Watcher(object):
             return False
         return True
 
+    def _readinessToggleFromRejectedPause(self, paused, fileChanged):
+        """In a locked room, a pause change nobody is allowed to make is a readiness toggle instead.
+
+        Clients that track the lock themselves (feature "roomLock") never send one - they revert the
+        player and toggle client-side - so this is what gives stock and older clients the same
+        "press pause/unpause in your player to say whether you are ready" behaviour. The pause
+        itself is still reverted, by forcePositionUpdate's non-controller branch.
+
+        Latched on the reported state: until the revert lands the client keeps repeating the same
+        rejected pause once a second, and one keypress must produce exactly one toggle.
+        """
+        room = self._room
+        if room is None or not room.isLocked() or self._server.disableReady:
+            return
+        if self.supportsFeature("roomLock"):
+            return
+        if fileChanged or not self._positionEstablished:
+            return  # a file load or a (re)join reporting for the first time, not a keypress
+        if paused == self._lockedPauseLatch:
+            return
+        self._lockedPauseLatch = paused
+        self._server.setReady(self, not self.isReady())
+
     def updateState(self, position, paused, doSeek, messageAge):
         pauseChanged = self.__hasPauseChanged(paused)
         previousPosition = self.getPosition() if self._room is not None else None  # extrapolated with the *old* _lastUpdatedOn, so it must be read first
@@ -1919,6 +1959,10 @@ class Watcher(object):
             if self.getRoom().canControl(self):
                 self._server.updateYapTimer(self.getRoom(), paused, self)
                 self._server.updatePauseWarning(self.getRoom(), paused, self)
+            else:
+                self._readinessToggleFromRejectedPause(paused, fileChanged)
+        elif paused is not None:
+            self._lockedPauseLatch = None  # back in agreement with the room: the next press counts again
         if position is not None:
             position = self._updatePositionByAge(messageAge, paused, position)
             self._evaluatePositionSync(position, previousPosition, doSeek, fileChanged)

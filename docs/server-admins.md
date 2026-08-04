@@ -60,6 +60,29 @@ Locked state is **runtime-only**: it does not survive a server restart, and it e
 empties. If the only admin disconnects, the room stays locked (position extrapolates) until an
 admin returns and `/unlock`s it.
 
+### Readiness in a locked room
+
+Playback belongs to the admins while the room is locked, so **pause/unpause in your player sets your
+readiness instead** — press play to say "I'm ready", press pause to go back to "not ready". Your
+player snaps straight back to whatever the room is doing and the room is never disturbed. This is
+the same behaviour non-operators have always had in managed rooms, and it means you do not have to
+leave the player to say you are ready. The GUI readiness control keeps working as before.
+
+Both directions always work here, including pressing play while the room is paused (that case does
+nothing in a managed room). Changes your player makes on its own — the seek back to the room
+position, the first seconds after connecting, a file that has just finished loading — are ignored,
+so only a real keypress moves your readiness.
+
+Two mechanisms deliver this, so it works with any client:
+
+* Clients built from this fork are told the room is locked (`Set: {"roomLock": …}`, gated on the
+  `roomLock` feature flag, sent on `/lock`, `/unlock`, and on joining or switching into a room) and
+  do the whole thing locally — the rejected pause never even reaches the server. They also show the
+  room with the padlock icon so it is visible why playback cannot be controlled.
+* Stock and older clients know nothing about the lock, so they still send the pause change. The
+  server turns that rejected pause into the same readiness toggle (once per keypress, whatever the
+  client repeats while waiting for the revert) and reverts the playback change as before.
+
 ## Recommended tracks
 
 An admin can publish their **current audio + subtitle selection** as the room's recommended
