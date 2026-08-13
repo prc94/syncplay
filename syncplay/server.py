@@ -27,9 +27,11 @@ class SyncFactory(Factory):
     def __init__(self, port='', password='', motdFilePath=None, roomsDbFile=None, permanentRoomsFile=None, isolateRooms=False, salt=None,
                  disableReady=False, disableChat=False, maxChatMessageLength=constants.MAX_CHAT_MESSAGE_LENGTH,
                  maxUsernameLength=constants.MAX_USERNAME_LENGTH, statsDbFile=None, tlsCertPath=None, yapTimer=False,
-                 pauseWarningAfter=0, pauseWarningInterval=0, pauseWarningMessage=None, adminPassword=None):
+                 pauseWarningAfter=0, pauseWarningInterval=0, pauseWarningMessage=None, adminPassword=None,
+                 bufferPause=True):
         self.isolateRooms = isolateRooms
         self.yapTimer = yapTimer
+        self.bufferPause = bufferPause  # Hold a room while somebody's player caches a stream (on unless --no-buffer-pause)
         self.adminPassword = adminPassword if adminPassword else None  # Plaintext compare; use TLS
         syncplay.messages.setLanguage(syncplay.messages.getInitialLanguage())
         self.pauseWarningAfter = pauseWarningAfter if pauseWarningAfter else 0  # Secs; 0/None = feature off
@@ -93,6 +95,9 @@ class SyncFactory(Factory):
     def sendState(self, watcher, doSeek=False, forcedUpdate=False):
         room = watcher.getRoom()
         if room:
+            # This 1s tick is also where a hold is re-examined: it may have run out of patience, or
+            # the watcher holding it may have gone quiet without ever saying it recovered.
+            self._reviewBufferHold(room)
             paused, position = room.isPaused(), room.getPosition()
             setBy = room.getSetBy()
             watcher.sendState(position, paused, doSeek, setBy, forcedUpdate)
@@ -112,6 +117,7 @@ class SyncFactory(Factory):
         features["serverAdmin"] = self.adminPassword is not None
         features["afk"] = True
         features["setOthersAfk"] = True
+        features["bufferPause"] = self.bufferPause
 
         return features
 
@@ -211,6 +217,7 @@ class SyncFactory(Factory):
                 self._stopPauseWarningTimer(room)
                 room.yapReset()
                 room.setTrackProposal(None)
+                room.releaseBufferHold(restore=False)  # nobody left to wait for, nothing to restore
                 # The published trusted domains are deliberately NOT cleared here, so a room that
                 # outlives being empty (permanent, or persistent with a playlist) still has them
                 # for the next session. An ordinary room is destroyed by _deleteRoomIfEmpty, so
@@ -218,6 +225,7 @@ class SyncFactory(Factory):
                 # both cases - see docs/server-admins.md.
             else:
                 self._yapNoteAfkPresence(room)  # an AFK watcher may have just left
+                self._reviewBufferHold(room)  # the watcher we were holding for may have just left
             if self.roomsDbFile:
                 l = lambda w: w.sendList(toGUIOnly=True)
                 self._roomManager.broadcast(watcher, l)
@@ -487,6 +495,8 @@ class SyncFactory(Factory):
             self._onOff(self.serverAcceptsTLS), len(self.permanentRooms)))
         send(getMessage("info-server-yap-chat-message").format(
             self._onOff(self.yapTimer), self.pauseWarningAfter, self.pauseWarningInterval))
+        send(getMessage("info-server-buffer-chat-message").format(
+            self._onOff(self.bufferPause), int(constants.BUFFER_HOLD_MAX)))
 
     def sendOSDMessage(self, room, text, senderName, colour=None, position=None, size=None,
                        duration=None, assFormatting=False):
@@ -876,6 +886,126 @@ class SyncFactory(Factory):
         messageDict = {"message": self.pauseWarningText(room), "username": room.yapPausedByName() or ""}
         for receiver in room.getWatchers():
             receiver.sendChatMessage(messageDict, skipIfSupportsFeature="pauseWarning")
+
+    def setBuffering(self, watcher):
+        """React to a watcher starting or stopping reporting a stalled cache.
+
+        Called on the edges only (Watcher.updateBuffering). Everything here is derived from the
+        room's current set of buffering watchers rather than from this one report, so several
+        people buffering at once hold the room exactly once and it resumes when the last of them
+        has caught up.
+        """
+        room = watcher.getRoom()
+        if room is None or not self.bufferPause:
+            return
+        if room.bufferingWatchers():
+            if not room.bufferHoldIsActive():
+                self._applyBufferHold(room, watcher)
+            return
+        if room.bufferHoldIsActive():
+            self._releaseBufferHold(room)
+
+    def _applyBufferHold(self, room, watcher):
+        """Hold a *playing* room for a watcher whose cache is filling.
+
+        A paused room is deliberately never held. It looks like the safer thing to do - the stall
+        is real either way - but recording a hold nobody can see turns the next person to press
+        play into "somebody resumed the room by hand", which gives up on the very watcher we were
+        waiting for. That is the common case, not an exotic one: everyone opens the stream, the
+        room is still paused, and the first play is exactly when a cache is least likely to be
+        full. Nothing is lost by waiting - _reviewBufferHold arms the hold within a tick of the
+        room actually starting to play.
+        """
+        if not room.isPlaying():
+            return
+        room.applyBufferHold(watcher)
+        self._broadcastBufferHoldState(room, watcher)
+        self._broadcastBufferChat(room, watcher.getName(), "buffer-hold-started-chat-message",
+                                  self._safeFormatTime(room.getPosition()))
+
+    @staticmethod
+    def _safeFormatTime(seconds):
+        # The room position is seeded from a watcher's reported playstate, which nothing upstream
+        # validates - and formatTime raises on NaN, infinity and absurdly large values. That is a
+        # pre-existing gap in position handling; this call site simply refuses to be the one that
+        # turns it into a server-side exception.
+        try:
+            return formatTime(seconds)
+        except (ValueError, OverflowError, TypeError):
+            return formatTime(0)
+
+    def _releaseBufferHold(self, room):
+        # A hold only ever exists on a room that was playing (see _applyBufferHold), so releasing
+        # one always resumes.
+        holder = room.bufferHoldBy()
+        elapsed = room.bufferHoldElapsed()
+        room.releaseBufferHold()
+        self._broadcastBufferHoldState(room, None)
+        self._broadcastBufferChat(room, holder, "buffer-hold-finished-chat-message", formatTime(elapsed))
+
+    def cancelBufferHold(self, room, watcher):
+        # Somebody resumed the room by hand mid-hold: keep their state, not the one we recorded.
+        # Their unpause propagates through the ordinary path, so nothing is broadcast here.
+        holder = room.bufferHoldBy()
+        for buffering in room.bufferingWatchers():
+            # "The room has stopped waiting for you." Without this the next state tick would see
+            # them still stalled and put the hold straight back, overriding the override.
+            buffering.bufferGiveUp()
+        room.releaseBufferHold(restore=False)
+        self._broadcastBufferChat(room, holder, "buffer-hold-cancelled-chat-message", watcher.getName())
+
+    def _reviewBufferHold(self, room):
+        """Re-derive whether the hold should stand, from the room rather than from a report.
+
+        Runs on every state tick, and is the reason nothing here depends on catching an edge:
+        Watcher.isBuffering expires by itself after BUFFER_REPORT_STALE (so a client that crashes
+        mid-stall stops holding the room without telling us anything), and a stall that is still
+        being reported gets its hold back even if the edge that should have started it was missed.
+        """
+        buffering = room.bufferingWatchers()
+        if not room.bufferHoldIsActive():
+            if buffering and self.bufferPause:
+                self._applyBufferHold(room, buffering[0])
+            return
+        if not buffering:
+            self._releaseBufferHold(room)
+            return
+        self._checkBufferHoldExpiry(room)
+
+    def _checkBufferHoldExpiry(self, room):
+        """Give up on a hold that has lasted too long to be a cache filling.
+
+        Runs off the per-watcher state tick rather than a timer of its own: a LoopingCall would
+        have to be armed, cancelled on the room emptying and guarded against firing on an emptied
+        room, and this needs none of that. Idempotent - the release clears the hold.
+        """
+        if room is None or not room.bufferHoldHasExpired():
+            return
+        holder = room.bufferHoldBy()
+        elapsed = room.bufferHoldElapsed()
+        for watcher in room.bufferingWatchers():
+            # Everyone still stalled, not just the one the hold is named after: giving up on the
+            # holder alone would let the next tick hand a fresh full-length hold to the next
+            # stalled watcher, and the room would sit there being given up on one user at a time.
+            watcher.bufferGiveUp()
+        # Left paused deliberately: whatever is wrong with that stream, resuming would stall again.
+        room.releaseBufferHold(restore=False)
+        self._broadcastBufferChat(room, holder, "buffer-hold-expired-chat-message", formatTime(elapsed))
+
+    def _broadcastBufferHoldState(self, room, setBy):
+        # Push the new play state at everyone the way forcePositionUpdate's controller branch does.
+        # The position is left to Room.getPosition, which already resolves to the slowest reference
+        # watcher - the stalled one - so the clients' sync-on-pause lands them where it stopped.
+        position = room.getPosition()
+        paused = room.isPaused()
+        stateSetBy = setBy if setBy is not None else room.getSetBy()
+        for receiver in room.getWatchers():
+            receiver.sendState(position, paused, False, stateSetBy, True)
+
+    def _broadcastBufferChat(self, room, username, messageKey, *args):
+        messageDict = {"message": getMessage(messageKey).format(*args), "username": username or ""}
+        for receiver in room.getWatchers():
+            receiver.sendChatMessage(messageDict)
 
     def setAfk(self, watcher, isAfk, username=None):
         # With a username naming someone else, sets that user's AFK state instead - gated on
@@ -1300,6 +1430,9 @@ class Room(object):
         self._trackProposal = None  # Admin-recommended default audio/sub tracks (dict). Runtime-only
         self._trustedDomains = None  # Admin-published trusted domains for the room (dict). Runtime-only
         self._positionIsMeaningful = False  # True once _position came from an in-sync watcher (or the rooms DB) rather than being a default zero
+        self._bufferHoldBy = None  # Username the current buffer hold is attributed to (None = no hold). Runtime-only
+        self._bufferHoldStartedAt = None  # Wall-clock time the hold began
+        self._bufferHoldPriorState = None  # Play state to restore when the hold is released
 
     def __str__(self, *args, **kwargs):
         return self.getName()
@@ -1406,6 +1539,65 @@ class Room(object):
             watcher.setPosition(position)
             self._setBy = setBy
         self.writeToDb()
+
+    def applyBufferHold(self, watcher):
+        """Pause the room because a watcher's player is stalled filling its cache.
+
+        Deliberately not routed through setPaused: that is gated on canControl(setBy), and this is
+        the *server* holding the room, not a user pausing it - the same server authority
+        SyncFactory.pullWatcherIntoSync exercises when it seeks a watcher nobody asked it to seek.
+        Going through canControl instead would silently do nothing in exactly the rooms where the
+        buffering user has no control of their own (locked and managed ones), which is where being
+        stuck behind an unfillable cache is worst.
+        """
+        self._bufferHoldBy = watcher.getName()
+        self._bufferHoldStartedAt = time.time()
+        self._bufferHoldPriorState = self._playState
+        self._playState = self.STATE_PAUSED
+
+    def releaseBufferHold(self, restore=True):
+        """End the hold, optionally putting the room back into the state it was in beforehand.
+
+        Returns the state the room was in when the hold started, so the caller can tell a genuine
+        resume from releasing a hold on a room that was already paused. restore=False is for a hold
+        somebody overrode by hand: their choice outranks the one we recorded when it started.
+        """
+        priorState = self._bufferHoldPriorState
+        self._bufferHoldBy = None
+        self._bufferHoldStartedAt = None
+        self._bufferHoldPriorState = None
+        if restore and priorState is not None:
+            self._playState = priorState
+        return priorState
+
+    def bufferHoldIsActive(self):
+        return self._bufferHoldBy is not None
+
+    def bufferHoldBy(self):
+        return self._bufferHoldBy
+
+    def bufferHoldElapsed(self):
+        if self._bufferHoldStartedAt is None:
+            return 0
+        return time.time() - self._bufferHoldStartedAt
+
+    def bufferHoldCachePercent(self):
+        # The holder's own figure while it is still with us; anyone else's would be meaningless.
+        watcher = self._watchers.get(self._bufferHoldBy)
+        return watcher.bufferCachePercent() if watcher else None
+
+    def bufferHoldHasExpired(self):
+        """Whether the current hold has outlasted BUFFER_HOLD_MAX.
+
+        A cache that has not filled in two minutes is not going to. The room then stays paused
+        (resuming would only stall again) but stops being *held*, so anybody can resume it.
+        """
+        return self.bufferHoldIsActive() and self.bufferHoldElapsed() > constants.BUFFER_HOLD_MAX
+
+    def bufferingWatchers(self):
+        # A watcher the room has already given up waiting for is still buffering, but no longer
+        # holds anything - otherwise releasing an expired hold would immediately re-apply it.
+        return [w for w in self._watchers.values() if w.holdsBufferPause()]
 
     def setPermanent(self, newState):
         self._permanent = newState
@@ -1534,6 +1726,15 @@ class Room(object):
             return
         del self._watchers[watcher.getName()]
         watcher.setRoom(None)
+        if not self._watchers:
+            # Cleared here rather than in SyncFactory.removeWatcher's isEmpty() block, because a
+            # room switch does not go through that: setWatcherRoom calls RoomManager.moveWatcher
+            # directly. A permanent (or persistent, playlist-carrying) room survives being empty,
+            # so a hold left behind here would be inherited by whoever joins next - and released
+            # on their first state tick, spontaneously resuming them and announcing that somebody
+            # who is not in the room has finished buffering. This is the one place every removal
+            # path passes through.
+            self.releaseBufferHold(restore=False)
         if not self._watchers and not self.isPersistent():
             self._position = 0
             self._positionIsMeaningful = False  # back to a default zero: nothing left to sync newcomers to
@@ -1662,6 +1863,10 @@ class Watcher(object):
         self._lastPositionPull = None  # Wall-clock time of the last catch-up seek we sent it
         self._fileChangedAt = None  # Set on every actual file change, so state handling can tell playback from a file switch
         self._lockedPauseLatch = None  # Last rejected pause state already converted into a readiness toggle in a locked room
+        self._buffering = False  # Last reported "my player is stalled filling its cache"
+        self._bufferCachePercent = None  # How full it said that cache was, when it knows
+        self._lastBufferReport = None  # When that report arrived; a watcher that goes quiet stops being believed
+        self._bufferGaveUp = False  # A hold for this watcher already ran out of patience; do not re-hold until it recovers
         self._connector.setWatcher(self)
         reactor.callLater(0.1, self._scheduleSendState)
 
@@ -1680,6 +1885,7 @@ class Watcher(object):
         self._positionEstablished = False
         self._unsyncedSince = None
         self._lastPositionPull = None
+        self.clearBuffering()  # a stall reported in the room we left must not hold the one we join
         if room is None:
             self._deactivateStateTimer()
         else:
@@ -1954,6 +2160,11 @@ class Watcher(object):
             # the way out). Echoes of server-forced changes never reach here
             # (ignoring-on-the-fly gate + __hasPauseChanged compares against room state).
             self._server.setAfk(self, False)
+        if pauseChanged and not paused and self.getRoom().bufferHoldIsActive() and self.getRoom().canControl(self):
+            # Somebody entitled to control the room resumed it while it was being held. Their call
+            # outranks the state we recorded when the hold started, so drop the hold without
+            # restoring anything and let the unpause below propagate normally.
+            self._server.cancelBufferHold(self.getRoom(), self)
         if pauseChanged:
             self.getRoom().setPaused(Room.STATE_PAUSED if paused else Room.STATE_PLAYING, self)
             if self.getRoom().canControl(self):
@@ -1969,6 +2180,66 @@ class Watcher(object):
             self.setPosition(position)
         if doSeek or pauseChanged:
             self._server.forcePositionUpdate(self, doSeek, paused)
+
+    def updateBuffering(self, active, cachePercent):
+        # `active is True` rather than bool(): the value is whatever a peer put on the wire, and
+        # bool("false") is True. Only an actual JSON true means it.
+        active = active is True
+        cachePercent = self._sanitisedCachePercent(cachePercent)
+        # Read the *effective* state first, before the new report refreshes the clock: a stall that
+        # went quiet for longer than BUFFER_REPORT_STALE has already stopped counting, so its next
+        # report is a fresh edge even though the raw flag never changed.
+        wasBuffering = self.isBuffering()
+        self._lastBufferReport = time.time()
+        self._bufferCachePercent = cachePercent if active else None
+        if not active:
+            self._bufferGaveUp = False  # recovered: it may hold the room again next time
+        self._buffering = active
+        if wasBuffering != active:
+            self._server.setBuffering(self)
+
+    @staticmethod
+    def _sanitisedCachePercent(value):
+        """A cache percentage we are willing to repeat to the rest of the room, or None.
+
+        Whatever arrives here is echoed to every watcher in the room once a second for as long as
+        the hold lasts, so an unvalidated value lets one client make the server broadcast an
+        arbitrary blob on its behalf. Receiving clients re-check it too - this is the other half of
+        the same rule, applied where the data is stored rather than where it is displayed.
+        """
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        if value != value or value in (float("inf"), float("-inf")):  # NaN/inf survive JSON
+            return None
+        return int(min(max(value, 0), 100))
+
+    def isBuffering(self):
+        """Whether this watcher is (still) reporting a stalled cache.
+
+        Reports expire. A client that crashes, freezes or has its connection cut mid-stall stops
+        sending them, and nothing else would ever tell us the stall is over - a room held by a
+        watcher that is no longer there is worse than one that resumes a moment early.
+        """
+        if not self._buffering:
+            return False
+        if self._lastBufferReport is None:
+            return False
+        return time.time() - self._lastBufferReport <= constants.BUFFER_REPORT_STALE
+
+    def holdsBufferPause(self):
+        return self.isBuffering() and not self._bufferGaveUp
+
+    def bufferCachePercent(self):
+        return self._bufferCachePercent
+
+    def bufferGiveUp(self):
+        self._bufferGaveUp = True
+
+    def clearBuffering(self):
+        self._buffering = False
+        self._bufferCachePercent = None
+        self._lastBufferReport = None
+        self._bufferGaveUp = False
 
     def isAdmin(self):
         return self._isAdmin
@@ -2007,6 +2278,7 @@ class ConfigurationGetter(object):
         self._argparser.add_argument('--disable-ready', action='store_true', help=getMessage("server-disable-ready-argument"))
         self._argparser.add_argument('--disable-chat', action='store_true', help=getMessage("server-chat-argument"))
         self._argparser.add_argument('--yap-timer', action='store_true', help=getMessage("server-yap-timer-argument"))
+        self._argparser.add_argument('--no-buffer-pause', action='store_true', help=getMessage("server-no-buffer-pause-argument"))
         self._argparser.add_argument('--pause-warning-after', metavar='seconds', type=int, nargs='?', help=getMessage("server-pause-warning-after-argument"))
         self._argparser.add_argument('--pause-warning-interval', metavar='seconds', type=int, nargs='?', help=getMessage("server-pause-warning-interval-argument"))
         self._argparser.add_argument('--pause-warning-message', metavar='message', type=str, nargs='?', help=getMessage("server-pause-warning-message-argument"))

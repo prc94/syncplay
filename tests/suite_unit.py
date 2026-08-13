@@ -144,6 +144,7 @@ fg._yapNoteRewind(rg, constants.YAP_TIMER_REWIND_RESET_POSITION + 0.5)  # past t
 check(S, "_yapNoteRewind ignores mid-file seeks", rg._yapTotalThisFile == 5.0)
 expect_raise_free(S, "_yapNoteRewind safe on None position/room", lambda: (fg._yapNoteRewind(rg, None), fg._yapNoteRewind(None, 0.0)))
 fg.yapTimer = False
+fg.bufferPause = True
 rg._yapTotalThisFile = 5.0
 fg._yapNoteRewind(rg, 0.0)                        # feature off -> never resets
 check(S, "_yapNoteRewind no-op when yapTimer disabled", rg._yapTotalThisFile == 5.0)
@@ -202,6 +203,7 @@ check(S, "pause-warning disabled: file change leaves flag untouched", rfo._pause
 S = "B:ConfigText"
 f = SyncFactory.__new__(SyncFactory)
 f.yapTimer = False
+f.bufferPause = True
 
 # ctor-equivalent logic executed through real ctor
 real = SyncFactory("8999", "", None, None, None, False, "saltsaltsalt", False, False, 150, 16, None, None,
@@ -256,6 +258,7 @@ check(S, "filekey: no setBy -> None", real._getRoomFileKey(kr) is None)
 real.pauseWarningAfter = 0
 expect_raise_free(S, "updatePauseWarning no-op when off", lambda: real.updatePauseWarning(Room("x", None), True, None))
 real.yapTimer = False
+real.bufferPause = True
 expect_raise_free(S, "updateYapTimer no-op when off", lambda: real.updateYapTimer(Room("x", None), True, None))
 expect_raise_free(S, "updatePauseWarning room=None", lambda: (setattr(real, 'pauseWarningAfter', 10), real.updatePauseWarning(None, True, None)))
 real.pauseWarningAfter = 0

@@ -76,6 +76,7 @@ class SyncClientProtocol(JSONCommandProtocol):
         self.logged = False
         self.hadFirstPlaylistIndex = False
         self.hadFirstStateUpdate = False
+        self._sentBuffering = False  # Whether our last State claimed we were buffering (drives the one falling-edge report)
         self._pingService = PingService()
 
     def showDebugMessage(self, line):
@@ -316,6 +317,14 @@ class SyncClientProtocol(JSONCommandProtocol):
                 yap.get("afkTotal", 0), yap.get("duration", None))
         if "pauseWarning" in state:
             self._client.ui.updatePauseWarning(state["pauseWarning"].get("message", ""))
+        # Absence is meaningful here, unlike the two above: the server stops sending the block when
+        # the hold ends, and that is how the client learns it may react to time differences again.
+        # isinstance, not presence: a non-dict value here would otherwise latch the hold on for
+        # ever, silently suppressing this client's own desync corrections while displaying nothing.
+        hold = state["bufferHold"] if "bufferHold" in state else None
+        hold = hold if isinstance(hold, dict) else None
+        self._client.setBufferHoldActive(hold is not None)
+        self._client.ui.updateBufferHold(hold)
         if position is not None and paused is not None and not self.clientIgnoringOnTheFly:
             self._client.updateGlobalState(position, paused, doSeek, setBy, messageAge)
         position, paused, doSeek, stateChange = self._client.getLocalState()
@@ -331,6 +340,15 @@ class SyncClientProtocol(JSONCommandProtocol):
             state["playstate"]["paused"] = paused
             if doSeek:
                 state["playstate"]["doSeek"] = doSeek
+        if self._client.isBuffering() or self._sentBuffering:
+            # Reported for as long as it lasts, plus exactly one report of the falling edge so the
+            # server can release its hold without waiting for the staleness timeout. Servers that
+            # do not know the key ignore it (unknown State keys are silently dropped both ways).
+            self._sentBuffering = self._client.isBuffering()
+            state["buffering"] = {
+                "active": self._client.isBuffering(),
+                "cache": self._client.getBufferCachePercent(),
+            }
         state["ping"] = {}
         if latencyCalculation:
             state["ping"]["latencyCalculation"] = latencyCalculation
@@ -832,6 +850,12 @@ class SyncServerProtocol(JSONCommandProtocol):
                 and not yapExpired and not room.hasAfkWatcher() \
                 and self._watcher.supportsFeature("pauseWarning"):
             state["pauseWarning"] = {"message": self._factory.pauseWarningText(room)}
+        if room and room.bufferHoldIsActive() and self._watcher.supportsFeature("bufferPause"):
+            state["bufferHold"] = {
+                "user": room.bufferHoldBy(),
+                "elapsed": room.bufferHoldElapsed(),
+                "cache": room.bufferHoldCachePercent(),
+            }
         if forced:
             self.serverIgnoringOnTheFly += 1
         if self.serverIgnoringOnTheFly or self.clientIgnoringOnTheFly:
@@ -868,6 +892,18 @@ class SyncServerProtocol(JSONCommandProtocol):
             self._clientLatencyCalculation = state["ping"]["clientLatencyCalculation"] if "clientLatencyCalculation" in state["ping"] else 0
             self._clientLatencyCalculationArrivalTime = time.time()
             self._pingService.receiveMessage(latencyCalculation, clientRtt)
+        if "buffering" in state:
+            # Deliberately outside the ignoring-on-the-fly gate below. Forcing the hold's pause on
+            # this client makes it ignore on the fly, and while it does it sends playstate-less
+            # States - so gating this too would drop the very report that ends the hold, leaving it
+            # to expire on the staleness timeout instead.
+            # isinstance, not truthiness: a peer is free to send anything at all under this key,
+            # and `null`/a string/a list would otherwise raise straight out of lineReceived and
+            # cost that client its connection (plus a traceback in the server log) for one bad
+            # line. Everything else off the wire in this feature is re-validated; so is this.
+            buffering = state["buffering"]
+            if isinstance(buffering, dict):
+                self._watcher.updateBuffering(buffering.get("active", False), buffering.get("cache"))
         if self.serverIgnoringOnTheFly == 0:
             self._watcher.updateState(position, paused, doSeek, self._pingService.getLastForwardDelay())
 

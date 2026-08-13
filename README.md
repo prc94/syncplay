@@ -59,6 +59,7 @@ than the real experience. Clients older than 1.5.0 see none of it and are unaffe
 | **Room info** | `/info`, `/info full` | Privately reports the room's live state: lock status, recommended tracks, published domains, controllers and admins. `full` adds the server's configuration and limits. |
 | **OSD messages** | `/osd` — server admins anywhere, managed-room operators in their own room | A generic channel for one-shot styled or full-ASS announcements on everyone's screen. |
 | **Join position guard** | always on, no flag | A joining or rejoining watcher can no longer drag the room back to 00:00. It defines the room position only while it is demonstrably at it, and is otherwise seeked to the room instead. This one lives entirely in the server, so **stock clients benefit too**. |
+| **Buffer hold** | on by default (`--no-buffer-pause` to disable) | When somebody's player stalls to cache a stream, the room **pauses and says so** instead of rewinding everyone and shifting their playback speed around the stall. mpv reports the stall itself (`paused-for-cache`, with a cache percentage); other players are covered by a position-frozen heuristic. Everyone gets a chat line, capable players get a live "waiting for X" overlay, and the room resumes on its own — or gives up after two minutes and stays paused. Held server-side, so it works in locked rooms and **stock clients are held and told too**. |
 
 The mpv hotkeys are script bindings and can be rebound in `input.conf` — for example
 `K script-binding syncplay_publish_tracks`. The names are `syncplay_publish_tracks`,
@@ -67,7 +68,8 @@ The mpv hotkeys are script bindings and can be rebound in `input.conf` — for e
 without the authority for it is a harmless no-op.
 
 **Documentation:** [Yap timer, pause warning & OSD](docs/yap-timer-and-pause-warning.md) ·
-[Server admins](docs/server-admins.md) · [Join position guard](docs/join-position-guard.md)
+[Server admins](docs/server-admins.md) · [Join position guard](docs/join-position-guard.md) ·
+[Buffer hold](docs/buffer-pause.md)
 
 **Branches:** `master` tracks upstream. `feature/yap-timer` adds the timer, AFK and OSD set.
 `feature/mgmt-overhaul` branches from it and adds server admins and everything admin-driven — that

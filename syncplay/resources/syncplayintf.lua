@@ -47,6 +47,7 @@ local GOOD_ALERT_TEXT_COLOUR = "00FF00" -- RBG
 local NOTIFICATION_TEXT_COLOUR = "FFFF00" -- RBG
 local YAPTIMER_TEXT_COLOUR = "00FFFF" -- RBG
 local PAUSEWARNING_TEXT_COLOUR = "0000FF" -- RBG (red - warning)
+local BUFFERHOLD_TEXT_COLOUR = "00A5FF" -- RBG (orange - waiting, not an error)
 
 local FONT_SIZE_MULTIPLIER = 2
 
@@ -142,6 +143,15 @@ local PAUSEWARNING_BLINK_ON_TIME = 1.0  -- Visible portion of each cycle (secs)
 function set_pausewarning_osd(osd_message)
     pausewarning_osd = osd_message
     last_pausewarning_osd_time = mp.get_time()
+end
+
+local bufferhold_osd = ""
+local last_bufferhold_osd_time = nil
+local BUFFERHOLD_OSD_TIMEOUT = 3.0  -- Hides this long after the last update (server refreshes it every ~1s while a hold is active). Kept in sync with BUFFERHOLD_OSD_TIMEOUT in constants.py
+
+function set_bufferhold_osd(osd_message)
+    bufferhold_osd = osd_message
+    last_bufferhold_osd_time = mp.get_time()
 end
 
 local osd_messages = {}  -- Generic server-driven OSD messages: {text, an, fs, bgr, expires}
@@ -423,12 +433,18 @@ function chat_update()
         end
     end
 
-    -- Syncplay yap-timer / pause-warning rows render below all original OSD entries
-    incrementRow,to_add = process_yaptimer_osd()
+    -- Syncplay yap-timer / pause-warning / buffer-hold rows render below all original OSD entries
+    -- These three render self-positioned rows appended after everything else, so unlike the
+    -- entries above they have no row count worth tracking - they return only their markup.
+    to_add = process_yaptimer_osd()
     if to_add ~= nil and to_add ~= "" then
         chat_ass = chat_ass .. to_add
     end
-    incrementRow,to_add = process_pausewarning_osd()
+    to_add = process_pausewarning_osd()
+    if to_add ~= nil and to_add ~= "" then
+        chat_ass = chat_ass .. to_add
+    end
+    to_add = process_bufferhold_osd()
     if to_add ~= nil and to_add ~= "" then
         chat_ass = chat_ass .. to_add
     end
@@ -506,7 +522,6 @@ end
 
 
 function process_yaptimer_osd()
-    local rowsCreated = 0
     local stringToAdd = ""
     if yaptimer_osd ~= "" and last_yaptimer_osd_time ~= nil and mp.get_time() - last_yaptimer_osd_time < YAPTIMER_OSD_TIMEOUT then
         local messageColour = "{\\1c&H"..YAPTIMER_TEXT_COLOUR.."}"
@@ -516,15 +531,13 @@ function process_yaptimer_osd()
             if segment ~= "" then
                 local messageString = messageColour..wordwrapify_string(segment)
                 stringToAdd = stringToAdd..format_chatroom(messageString)
-                rowsCreated = rowsCreated + 1
             end
         end
     end
-    return rowsCreated, stringToAdd
+    return stringToAdd
 end
 
 function process_pausewarning_osd()
-    local rowsCreated = 0
     local stringToAdd = ""
     if pausewarning_osd ~= "" and last_pausewarning_osd_time ~= nil and mp.get_time() - last_pausewarning_osd_time < PAUSEWARNING_OSD_TIMEOUT then
         -- Gentle blink: visible for most of each cycle, with a brief off-dip.
@@ -534,10 +547,19 @@ function process_pausewarning_osd()
             local messageString = wordwrapify_string(pausewarning_osd)
             messageString = messageColour..messageString
             stringToAdd = format_chatroom(messageString)
-            rowsCreated = 1
         end
     end
-    return rowsCreated, stringToAdd
+    return stringToAdd
+end
+
+function process_bufferhold_osd()
+    local stringToAdd = ""
+    if bufferhold_osd ~= "" and last_bufferhold_osd_time ~= nil and mp.get_time() - last_bufferhold_osd_time < BUFFERHOLD_OSD_TIMEOUT then
+        local messageColour = "{\\1c&H"..BUFFERHOLD_TEXT_COLOUR.."}"
+        local messageString = messageColour..wordwrapify_string(bufferhold_osd)
+        stringToAdd = format_chatroom(messageString)
+    end
+    return stringToAdd
 end
 
 function process_chat_item(i, rowsAdded)
@@ -658,6 +680,12 @@ mp.register_script_message('pausewarning-osd', function(e)
     set_pausewarning_osd(e)
 end)
 
+-- Buffer hold OSD (someone in the room is caching a stream)
+
+mp.register_script_message('bufferhold-osd', function(e)
+    set_bufferhold_osd(e)
+end)
+
 -- Generic OSD messages (JSON payload; optional raw ASS markup)
 
 mp.register_script_message('osd-message', function(e)
@@ -730,7 +758,12 @@ function state_paused_and_position()
     -- bob
     local pause_status = tostring(mp.get_property_native("pause"))
     local position_status = tostring(mp.get_property_native("time-pos"))
-    mp.command('print-text "<paused='..pause_status..', pos='..position_status..'>"')
+    -- Cache state rides the same poll rather than a message of its own: this runs every ~0.1s.
+    -- Both properties come back "nil" on mpv builds and inputs lacking them, which Syncplay reads
+    -- as "this player cannot answer" and falls back to its own stall heuristic.
+    local cache_status = tostring(mp.get_property_native("paused-for-cache"))
+    local cachepct_status = tostring(mp.get_property_native("cache-buffering-state"))
+    mp.command('print-text "<paused='..pause_status..', pos='..position_status..', cache='..cache_status..', cachepct='..cachepct_status..'>"')
     -- mp.command('print-text "<paused>true</paused><position>7.6</position>"')
 end
 

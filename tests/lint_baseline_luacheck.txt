@@ -1,12 +1,12 @@
+# luacheck baseline — findings that already existed in UPSTREAM code.
 #
-#
-#     python3 tests/suite_lua.py --update-baseline
 # DO NOT "fix" these. They live in files upstream also maintains; changing them would conflict
+# on every upstream merge. They are recorded so the gate can fail on genuinely new findings.
+#
 # One line per occurrence: <path>|<code>|<symbol>. No line numbers, so entries survive edits
 # above them. Regenerate after an upstream merge with:
+#     python3 tests/suite_lua.py --update-baseline
 # and review the diff — entries appearing for fork-authored code are a real signal, not noise.
-# luacheck baseline — findings that already existed in UPSTREAM code.
-# on every upstream merge. They are recorded so the gate can fail on genuinely new findings.
 syncplay/resources/syncplayintf.lua|W113|clear_log_buffer
 syncplay/resources/syncplayintf.lua|W131|chat_timer
 syncplay/resources/syncplayintf.lua|W131|process_chat_item_subtitle
@@ -26,8 +26,6 @@ syncplay/resources/syncplayintf.lua|W212|mood
 syncplay/resources/syncplayintf.lua|W213|i
 syncplay/resources/syncplayintf.lua|W231|notification_osd_mood
 syncplay/resources/syncplayintf.lua|W311|alphawarning_ass
-syncplay/resources/syncplayintf.lua|W311|incrementRow
-syncplay/resources/syncplayintf.lua|W311|incrementRow
 syncplay/resources/syncplayintf.lua|W311|incrementRow
 syncplay/resources/syncplayintf.lua|W311|nextChar
 syncplay/resources/syncplayintf.lua|W311|oldPos

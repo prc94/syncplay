@@ -135,9 +135,14 @@ def test_handle_state_ping_without_latency_calculation():
     p.hadFirstStateUpdate = True
     p.clientIgnoringOnTheFly = 0
     p.serverIgnoringOnTheFly = 0
+    p._sentBuffering = False
     p._client = types.SimpleNamespace(
         getLocalState=lambda: (None, None, None, False),
-        updateGlobalState=lambda *a: None)
+        updateGlobalState=lambda *a: None,
+        isBuffering=lambda: False,
+        getBufferCachePercent=lambda: None,
+        setBufferHoldActive=lambda active: None,
+        ui=types.SimpleNamespace(updateBufferHold=lambda values: None))
     sent = []
     p.sendMessage = lambda m: sent.append(m)
     try:
@@ -200,7 +205,7 @@ def build_client(ev, canControl=False):
         "fastforwardThreshold": constants.DEFAULT_FASTFORWARD_THRESHOLD,
         "slowdownThreshold": constants.DEFAULT_SLOWDOWN_KICKIN_THRESHOLD,
         "rewindOnDesync": True, "fastforwardOnDesync": True, "slowOnDesync": True,
-        "dontSlowDownWithMe": False,
+        "dontSlowDownWithMe": False, "pauseOnBuffer": True,
     }
     c.userlist = types.SimpleNamespace(currentUser=types.SimpleNamespace(
         file={"name": "a.mkv", "duration": 7200, "path": "/a.mkv"},
@@ -208,6 +213,8 @@ def build_client(ev, canControl=False):
     c._speedChanged = False
     c.behindFirstDetected = None
     c._desyncSince = {}
+    c._buffering = False        # no cache stall here: this suite is about link jitter
+    c._bufferHoldActive = False
     c._userOffset = 0
     c.lastRewindTime = None
     c.lastUpdatedFileTime = None

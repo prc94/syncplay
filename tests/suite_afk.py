@@ -64,6 +64,7 @@ def make_factory(disableReady=False, pauseWarningAfter=0):
     f = SyncFactory.__new__(SyncFactory)
     f.disableReady = disableReady
     f.yapTimer = False
+    f.bufferPause = True
     f.pauseWarningAfter = pauseWarningAfter
     f.pauseWarningMessage = "Paused for {} - please resume"
     f.maxChatMessageLength = 150
@@ -183,6 +184,7 @@ sw_cap._features["yapTimer"] = True
 st = run_sendState(sw_cap, fp)
 check("yapTimer State field still sent during AFK", "yapTimer" in st, repr(st.keys()))
 fp.yapTimer = False
+fp.bufferPause = True
 sw_cap._afk = False
 
 # ---------- auto-clear on activity ----------
@@ -313,6 +315,8 @@ def run_afk_keybind_then_pause(canControl):
     c.lastAdvanceTime = None; c.playerPositionBeforeLastSeek = 5.0
     c._userOffset = 0.0; c.waitingToLoadNewfile = False
     c._afkKeybindPausePending = False
+    c._config = {"pauseOnBuffer": False}  # buffer detection is not what this test drives
+    c._buffering = False; c._bufferHoldActive = False
     wire = []
     class FakePlayer:
         def setPaused(self, v): wire.append(("player.setPaused", v))
@@ -358,6 +362,8 @@ def normal_user_pause_still_toggles_ready():
     c.lastAdvanceTime = None; c.playerPositionBeforeLastSeek = 5.0
     c._userOffset = 0.0; c.waitingToLoadNewfile = False
     c._afkKeybindPausePending = False   # no keybind involved this time
+    c._config = {"pauseOnBuffer": False}  # buffer detection is not what this test drives
+    c._buffering = False; c._bufferHoldActive = False
     wire = []
     c._player = types.SimpleNamespace(setPaused=lambda v: None, setPosition=lambda p: None)
     class FakeProto:

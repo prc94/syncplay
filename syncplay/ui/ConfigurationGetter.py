@@ -52,6 +52,7 @@ class ConfigurationGetter(object):
             "slowOnDesync": True,
             "fastforwardOnDesync": True,
             "dontSlowDownWithMe": False,
+            "pauseOnBuffer": True,
             "folderSearchFirstFileTimeout": constants.FOLDER_SEARCH_FIRST_FILE_TIMEOUT,
             "folderSearchTimeout": constants.FOLDER_SEARCH_TIMEOUT,
             "folderSearchDoubleCheckInterval": constants.FOLDER_SEARCH_DOUBLE_CHECK_INTERVAL,
@@ -134,6 +135,7 @@ class ConfigurationGetter(object):
             "rewindOnDesync",
             "slowOnDesync",
             "fastforwardOnDesync",
+            "pauseOnBuffer",
             "pauseOnLeave",
             "clearGUIData",
             "resetConfig",
@@ -207,7 +209,7 @@ class ConfigurationGetter(object):
                 "rewindThreshold", "fastforwardThreshold",
                 "folderSearchFirstFileTimeout", "folderSearchTimeout", "folderSearchDoubleCheckInterval", "folderSearchWarningThreshold",
                 "slowOnDesync", "rewindOnDesync",
-                "fastforwardOnDesync", "dontSlowDownWithMe",
+                "fastforwardOnDesync", "dontSlowDownWithMe", "pauseOnBuffer",
                 "forceGuiPrompt", "filenamePrivacyMode",
                 "filesizePrivacyMode", "unpauseAction",
                 "pauseOnLeave", "readyAtStart", "autoplayMinUsers",
@@ -340,6 +342,9 @@ class ConfigurationGetter(object):
                     key = "adminPassword"
                 if key == "no_auto_update":
                     self._config["autoUpdate"] = False
+                    continue
+                if key == "no_pause_on_buffer":
+                    self._config["pauseOnBuffer"] = False
                     continue
                 if key == "auto_install_updates":
                     key = "autoInstallUpdates"
@@ -533,6 +538,7 @@ class ConfigurationGetter(object):
         self._argparser.add_argument('--player-path', metavar='path', type=str, help=getMessage("player-path-argument"))
         self._argparser.add_argument('-psn', metavar='blackhole', type=str, help=argparse.SUPPRESS)
         self._argparser.add_argument('--language', metavar='language', type=str, help=getMessage("language-argument"))
+        self._argparser.add_argument('--no-pause-on-buffer', action='store_true', help=getMessage("no-pause-on-buffer-argument"))
         self._argparser.add_argument('--no-auto-update', action='store_true', help=getMessage("no-auto-update-argument"))
         self._argparser.add_argument('--auto-install-updates', action='store_true', help=getMessage("auto-install-updates-argument"))
         self._argparser.add_argument('--update-repo', metavar='updateRepo', type=str, help=getMessage("update-repo-argument"))

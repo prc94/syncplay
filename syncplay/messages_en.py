@@ -235,6 +235,7 @@ en = {
     "args-argument": 'player options, if you need to pass options starting with - prepend them with single \'--\' argument',
     "clear-gui-data-argument": 'resets path and window state GUI data stored as QSettings',
     "language-argument": 'language for Syncplay messages ({})', # Languages
+    "no-pause-on-buffer-argument": 'do not tell the room when your player stalls to cache a stream (it will not pause and wait for you)',
     "no-auto-update-argument": 'disable the built-in client updater (modded builds only)',
     "auto-install-updates-argument": 'download and install client updates without asking (modded builds only)',
     "update-repo-argument": 'GitHub owner/repository to fetch client updates from (modded builds only)',
@@ -284,6 +285,7 @@ en = {
     "rewindondesync-label": "Rewind on major desync (recommended)",
     "fastforwardondesync-label": "Fast-forward if lagging behind (recommended)",
     "dontslowdownwithme-label": "Never slow down or rewind others (experimental)",
+    "pauseonbuffer-label": "Pause the room while my player is buffering (recommended)",
     "pausing-title": "Pausing",
     "pauseonleave-label": "Pause when user leaves (e.g. if they are disconnected)",
     "readiness-title": "Initial readiness state",
@@ -487,6 +489,7 @@ en = {
     "nostore-tooltip": "Run Syncplay with the given configuration, but do not permanently store the changes.",  # (Inverted)
     "rewindondesync-tooltip": "Jump back when needed to get back in sync. Disabling this option can result in major desyncs!",
     "fastforwardondesync-tooltip": "Jump forward when out of sync with room operator (or your pretend position if 'Never slow down or rewind others' enabled).",
+    "pauseonbuffer-tooltip": "When your player stalls to cache a stream, tell the room so it pauses and waits for you instead of rewinding and slowing everyone down. Turning this off stops Syncplay noticing your own stalls at all - the room will treat them as ordinary desyncs. You are still told when it waits for somebody else.",
     "showosd-tooltip": "Sends Syncplay messages to media player OSD.",
     "showosdwarnings-tooltip": "Show warnings if playing different file, alone in room, users not ready, etc.",
     "showsameroomosd-tooltip": "Show OSD notifications for events relating to room user is in.",
@@ -566,6 +569,13 @@ en = {
     "track-proposal-osd-message": "Operator {} recommends: audio {}, subtitles {}", # Admin username, audio description, sub description
     "server-trusted-domains-notification": "Added {} trusted domain(s) shared by {} for this session", # Count, admin username
     "pause-warning-default-message": "Paused for {} - please resume when ready", # Default --pause-warning-message; optional {} = pause duration
+    "buffer-hold-started-chat-message": "is buffering - the room is paused at {} until their player catches up", # Room position; prefixed with <username> who is buffering
+    "buffer-hold-finished-chat-message": "finished buffering after {} - resuming", # How long the hold lasted; prefixed with <username> who was buffering
+    "buffer-hold-cancelled-chat-message": "is still buffering, but {} resumed the room", # Username who resumed; prefixed with <username> who is buffering
+    "buffer-hold-expired-chat-message": "has been buffering for {} - the room will stay paused until someone resumes it", # How long the hold lasted; prefixed with <username> who is buffering
+    "buffer-hold-osd-message": "Waiting for {} to buffer... {}", # Live overlay: buffering username, how long so far
+    "buffer-hold-osd-cache-suffix": " ({}%)", # Appended to the overlay when the player reports how full its cache is
+    "buffering-local-chat-message": "My player is buffering - please hold on", # Sent by the buffering client itself when the server has no buffer-pause support
     "unknown-command-chat-message": "Unknown command '{}' - not sent to the room. Type /help for a list of commands.", # Command token
     "osd-command-unauthorised-chat-message": "Only room operators and server admins can use /osd.",
     "admin-login-success-chat-message": "You are now a server admin.",
@@ -604,6 +614,7 @@ en = {
     "info-server-limits-chat-message": "Max lengths - chat: {}, username: {}, room: {}, filename: {}",  # chars x4
     "info-server-admin-chat-message": "Admin password: {}, server password: {}, TLS: {}, permanent rooms: {}",  # on/off x3, count
     "info-server-yap-chat-message": "Yap timer: {}, pause warning after: {}s, interval: {}s",  # on/off, secs, secs
+    "info-server-buffer-chat-message": "Buffer hold: {} (max {}s)",  # on/off, secs
 
     # Server notifications
     "welcome-server-notification": "Welcome to Syncplay server, ver. {0}",  # version
@@ -628,6 +639,7 @@ en = {
     "server-pause-warning-after-argument": "warn a room when a single pause exceeds this many seconds (0/unset = off); blinking OSD on supported players, chat elsewhere",
     "server-pause-warning-interval-argument": "how often (seconds) to repeat the pause warning chat while still paused (default: same as --pause-warning-after)",
     "server-pause-warning-message-argument": "custom pause-warning text; include {} to insert the pause duration",
+    "server-no-buffer-pause-argument": "disable the buffer hold: do not pause a room while somebody's player is caching a stream",
     "server-admin-password-argument": "password granting server-admin authority over all rooms (also via SYNCPLAY_ADMIN_PASSWORD env var); users authenticate with /admin <password> in chat",
     "server-chat-maxchars-argument": "Maximum number of characters in a chat message (default is {})", # Default number of characters
     "server-maxusernamelength-argument": "Maximum number of characters in a username (default is {})",

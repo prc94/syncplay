@@ -57,6 +57,7 @@ def make_factory(adminPassword=None):
     f = SyncFactory.__new__(SyncFactory)
     f.adminPassword = adminPassword
     f.yapTimer = False
+    f.bufferPause = True
     f.pauseWarningAfter = 0
     f.maxChatMessageLength = 150
     f._roomManager = StubRoomManager()

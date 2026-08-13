@@ -23,6 +23,8 @@ class MiniClient:
         self.sock = None; self.buf = b""
         self.desired = None            # our reported paused state (None until we adopt one)
         self.position = 5.0            # reported position; move it to imitate playback progressing
+        self.buffering = False         # report a stalled cache on every State, as the real client does
+        self.sent_buffering = False    # so the falling edge is reported exactly once, also as it does
         self.server_iotf = 0           # ignoringOnTheFly counter to echo back
         self.hello = False
         self.events = []               # (t_rel, kind, payload)
@@ -70,8 +72,13 @@ class MiniClient:
                     self.log("yap", st["yapTimer"])
                 if "pauseWarning" in st:
                     self.log("pw", st["pauseWarning"]["message"])
+                if "bufferHold" in st:
+                    self.log("hold", st["bufferHold"])
                 if "playstate" in st:
                     self.log("state", st["playstate"].get("paused"))
+                    # Logged separately from "state" so suites that read that one keep getting a
+                    # plain bool; position assertions need the number.
+                    self.log("pos", st["playstate"].get("position"))
                 io = st.get("ignoringOnTheFly", {})
                 if "server" in io:
                     self.server_iotf = io["server"]
@@ -90,6 +97,18 @@ class MiniClient:
             elif action == "unpause":
                 self.desired = False
                 self.log("act", "unpause")
+            elif action == "follow":
+                # Stop driving and start behaving like a real client: adopt whatever the server
+                # directs. A permanent 'leader' keeps re-asserting its own playstate, which reads
+                # server-side as a user overriding every forced change.
+                self.role = "follower"
+                self.log("act", "follow")
+            elif action == "buffer":
+                self.buffering = True
+                self.log("act", "buffer")
+            elif action == "unbuffer":
+                self.buffering = False
+                self.log("act", "unbuffer")
             elif action.startswith("setfile:"):
                 fname = action.split(":", 1)[1]
                 self.send({"Set": {"file": {"name": fname, "duration": 100, "size": 500}}})
@@ -103,6 +122,9 @@ class MiniClient:
             state = {"State": {"ping": {"clientRtt": 0}}}
             if self.desired is not None:
                 state["State"]["playstate"] = {"position": self.position, "paused": self.desired, "doSeek": False}
+            if self.buffering or self.sent_buffering:
+                state["State"]["buffering"] = {"active": self.buffering, "cache": 20 if self.buffering else None}
+                self.sent_buffering = self.buffering
             if self.server_iotf:
                 state["State"]["ignoringOnTheFly"] = {"server": self.server_iotf}
                 self.server_iotf = 0

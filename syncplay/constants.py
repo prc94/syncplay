@@ -109,6 +109,18 @@ MAX_MESSAGE_AGE = 2.0  # Secs - ceiling applied where messageAge is added to a r
 REWIND_SUSTAIN_DURATION = 1.5  # Secs - how long the client must continuously measure itself past the rewind threshold before seeking back
 SLOWDOWN_SUSTAIN_DURATION = 1.5  # Secs - ditto before nudging playback speed down to bleed off a difference
 
+# Buffer hold (see docs/buffer-pause.md). A player caching a stream stalls while still reporting
+# itself unpaused, which the desync machinery above reads as a real time difference - so the room
+# rewinds and speed-shifts around it. Detected as buffering instead, announced, and waited out.
+BUFFER_STALL_DETECT = 0.8  # Secs a supposedly-playing position must stay frozen before it counts as a stall rather than an ordinary poll gap
+BUFFER_STALL_TOLERANCE = 0.15  # Secs of progress within that window that still counts as "frozen" (players report position coarsely)
+BUFFER_RECOVER_HOLD = 1.0  # Secs the position must advance again continuously before the client declares itself recovered
+BUFFER_REPORT_STALE = 3.0  # Secs after a watcher's last buffering report before the server stops believing it - nobody holds a room by going quiet
+BUFFER_HOLD_MAX = 120.0  # Secs - a hold this long is not a cache filling up; give up, stay paused and say so once (cf. YAP_TIMER_MAX_PAUSE)
+BUFFER_HOLD_TICK = 1.0  # Secs between hold bookkeeping ticks (timeout check; the OSD rides the State heartbeat)
+BUFFER_CHAT_MIN_INTERVAL = 20.0  # Secs - minimum gap between "X is buffering" chat lines for the same user, so a flapping link cannot spam a room
+BUFFERHOLD_OSD_TIMEOUT = 3.0  # Secs after the last bufferHold State before the overlay hides itself. Kept in sync with BUFFERHOLD_OSD_TIMEOUT in syncplayintf.lua
+
 # Server-side chat commands (first-token match, intercepted in SyncFactory.sendChat)
 ADMIN_COMMAND = "/admin"  # /admin <password> - authenticate as server admin
 LOCK_COMMAND = "/lock"  # Admin: lock the current plain room (only admins control playback)

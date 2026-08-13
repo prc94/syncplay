@@ -1114,11 +1114,14 @@ class ConfigDialog(QtWidgets.QDialog):
 
         self.dontslowwithmeCheckbox = QCheckBox(getMessage("dontslowdownwithme-label"))
         self.dontslowwithmeCheckbox.setObjectName("dontSlowDownWithMe")
+        self.pauseOnBufferCheckbox = QCheckBox(getMessage("pauseonbuffer-label"))
+        self.pauseOnBufferCheckbox.setObjectName("pauseOnBuffer")
 
         self.othersyncSettingsLayout.addWidget(self.dontslowwithmeCheckbox, 2, 0, 1, 2, Qt.AlignLeft)
 
         self.othersyncSettingsLayout.setAlignment(Qt.AlignLeft)
         self.othersyncSettingsLayout.addWidget(self.fastforwardCheckbox, 3, 0, 1, 2, Qt.AlignLeft)
+        self.othersyncSettingsLayout.addWidget(self.pauseOnBufferCheckbox, 4, 0, 1, 2, Qt.AlignLeft)
 
         ## Trusted domains
 

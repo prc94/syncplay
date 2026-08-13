@@ -146,6 +146,15 @@ class SyncplayClient(object):
         self._speedChanged = False
         self.behindFirstDetected = None
         self._desyncSince = {}  # Desync condition -> when it was first continuously observed; see _desyncSustainedFor
+        # Buffer hold (see docs/buffer-pause.md): our own player stalling on a cache, and the room
+        # being held for somebody's stall. Both suppress the desync reactions above.
+        self._buffering = False
+        self._bufferingSince = None
+        self._bufferCachePercent = None
+        self._stallReference = None  # (time, position) baseline the stall heuristic measures progress against
+        self._bufferHoldActive = False  # A server-driven hold is in force for this room
+        self._bufferFallbackPaused = False  # We paused the room ourselves because the server has no buffer hold
+        self._lastBufferChatTime = None  # Rate limit on our own "I am buffering" chat lines
         self.autoPlay = False
         self.autoPlayThreshold = None
 
@@ -253,6 +262,7 @@ class SyncplayClient(object):
         positionBeforeSeek = self._playerPosition
         self._playerPosition = position
         self._playerPaused = paused
+        self._updateBufferingState(paused, position)
         if self._lastGlobalUpdate and self.userlist.currentUser.file \
                 and abs(position - self.getGlobalPosition()) <= constants.CLIENT_SYNC_ON_FILE_LOAD_THRESHOLD:
             self._syncedWithRoomSinceConnect = True  # closes the join window: see _syncNewlyLoadedFileToRoom
@@ -325,6 +335,167 @@ class SyncplayClient(object):
             return True
         return self.lastUpdatedFileTime is not None \
             and time.time() - self.lastUpdatedFileTime < constants.ROOM_LOCK_READY_TOGGLE_GRACE
+
+    def isBuffering(self):
+        return self._buffering
+
+    def getBufferCachePercent(self):
+        return self._bufferCachePercent
+
+    def bufferHoldIsActive(self):
+        return self._bufferHoldActive
+
+    def setBufferHoldActive(self, active):
+        self._bufferHoldActive = active
+
+    def _playerBufferState(self):
+        """(stalled, cachePercent) straight from the player, or None if it cannot answer.
+
+        None is not "not buffering": it sends detection to the position-stall heuristic, which is
+        the only thing every other player can support.
+        """
+        if self._player is None or not getattr(self._player, "bufferStateSupported", False):
+            return None
+        return self._player.getBufferState()
+
+    def _positionIsFrozen(self, position):
+        """Whether playback has made no real progress for BUFFER_STALL_DETECT.
+
+        The baseline moves whenever the position actually advances, so this is a sliding window
+        rather than a one-shot sample - the same "sustained evidence" idea as _desyncSustainedFor,
+        but measured against the player's own clock instead of the server's reports. A backwards
+        jump is a seek, not a stall, and also resets the baseline.
+        """
+        now = time.time()
+        if self._stallReference is None:
+            self._stallReference = (now, position)
+            return False
+        referenceTime, referencePosition = self._stallReference
+        if position < referencePosition or position - referencePosition > constants.BUFFER_STALL_TOLERANCE:
+            self._stallReference = (now, position)
+            return False
+        return now - referenceTime >= constants.BUFFER_STALL_DETECT
+
+    def _bufferingEvidence(self, paused, position):
+        """Whether there is enough evidence that our player is stalled filling a cache.
+
+        Two sources, one answer. mpv reports `paused-for-cache` itself, which says *why* playback
+        stopped; everyone else gets the heuristic, which can only say that it did. Either way the
+        room is not told to wait on less than BUFFER_STALL_DETECT of evidence.
+        """
+        if self._player is None or not self.userlist.currentUser.file:
+            return False
+        if paused or self.getGlobalPaused() or self._lastGlobalUpdate is None:
+            return False  # nobody is meant to be playing: a still position means nothing
+        if self._pauseChangeIsPlayerNoise() or self.waitingToLoadNewfile:
+            # A frozen position right after a seek, a file load or a connection is how those look
+            # from here - the same windows that make a pause change player noise rather than a
+            # keypress. Reset the baseline so the file that is loading does not arrive pre-stalled.
+            self._stallReference = None
+            self._clearSustainedDesync("buffering")
+            return False
+        native = self._playerBufferState()
+        if native is not None:
+            stalled, percent = native
+            self._bufferCachePercent = percent if stalled else None
+            self._stallReference = None  # the heuristic is not in play; do not carry a stale baseline
+            return self._desyncSustainedFor("buffering", stalled, constants.BUFFER_STALL_DETECT)
+        if self._atEndOfFile(position) or self._recentlyAdvanced():
+            # A player that has run out of file looks exactly like a stalled one to the heuristic:
+            # position frozen, still calling itself unpaused. Several players sit on the last frame
+            # for a moment before their own pause flag catches up, which is long enough to clear
+            # BUFFER_STALL_DETECT and pause the whole room as the file ends. mpv is exempt because
+            # its own paused-for-cache flag answers the question properly (handled above).
+            self._stallReference = None
+            return False
+        self._bufferCachePercent = None
+        return self._positionIsFrozen(position)
+
+    def _atEndOfFile(self, position):
+        currentLength = self.userlist.currentUser.file["duration"] if self.userlist.currentUser.file else 0
+        if not currentLength or currentLength <= 0:
+            return False  # unknown duration (a live stream): nothing to be at the end of
+        return abs(position - currentLength) < constants.PLAYLIST_LOAD_NEXT_FILE_TIME_FROM_END_THRESHOLD
+
+    def _updateBufferingState(self, paused, position):
+        if not self._config['pauseOnBuffer']:
+            # Opted out: do not even look. The room can still be held for somebody *else's* stall -
+            # that arrives from the server and is handled independently of this setting.
+            self._buffering = False
+            return
+        stalled = self._bufferingEvidence(paused, position)
+        if stalled and not self._buffering:
+            self._buffering = True
+            self._bufferingSince = time.time()
+            self._clearSustainedDesync("bufferrecover")
+            self._onBufferingStarted()
+        elif self._buffering and self._desyncSustainedFor("bufferrecover", not stalled, constants.BUFFER_RECOVER_HOLD):
+            self._buffering = False
+            self._clearSustainedDesync("bufferrecover")
+            self._onBufferingFinished()
+
+    def _reportBufferingImmediately(self):
+        # The State heartbeat would carry it within a second anyway; sending now shortens the window
+        # in which the room is still reacting to a stall it has not been told about. stateChange is
+        # deliberately False - this is not a playstate change and must not bump ignoringOnTheFly.
+        if self._protocol and self._protocol.logged:
+            self._protocol.sendState(self.getPlayerPosition(), self.getPlayerPaused(), False, None, False)
+
+    def _onBufferingStarted(self):
+        self.ui.showDebugMessage("Buffering detected (cache {}%)".format(self._bufferCachePercent))
+        if self.serverFeatures.get("bufferPause"):
+            self._reportBufferingImmediately()
+        else:
+            self._bufferHoldFallback()
+
+    def _onBufferingFinished(self):
+        bufferedFor = time.time() - self._bufferingSince if self._bufferingSince else 0
+        self.ui.showDebugMessage("Buffering finished after {:.1f}s".format(bufferedFor))
+        self._bufferingSince = None
+        self._bufferCachePercent = None
+        if self.serverFeatures.get("bufferPause"):
+            self._reportBufferingImmediately()
+        else:
+            self._releaseBufferHoldFallback()
+
+    def _bufferHoldFallback(self):
+        """Stand in for the server's buffer hold when it does not have one.
+
+        Only ever pauses when we are entitled to control the room: in a locked or managed room the
+        server rejects the pause and converts it into a readiness toggle
+        (Watcher._readinessToggleFromRejectedPause), so pressing it here would flip our readiness
+        instead of pausing anybody. There we say so in chat and leave it at that.
+        """
+        self._sendBufferingChatNotice()
+        if self.getGlobalPaused() or not self.userlist.currentUser.canControl():
+            return
+        if not (self._protocol and self._protocol.logged):
+            return
+        self._bufferFallbackPaused = True
+        self.setPaused(True)
+        self._protocol.sendState(self.getPlayerPosition(), True, False, None, True)
+
+    def _releaseBufferHoldFallback(self):
+        # Only undo our own pause, and only if it is still ours to undo: anybody pausing on purpose
+        # in the meantime outranks a cache that has finished filling.
+        if not self._bufferFallbackPaused:
+            return
+        self._bufferFallbackPaused = False
+        if not self.getGlobalPaused():
+            return
+        if not (self._protocol and self._protocol.logged):
+            return
+        self.setPaused(False)
+        self._protocol.sendState(self.getPlayerPosition(), False, False, None, True)
+
+    def _sendBufferingChatNotice(self):
+        if not self.serverFeatures.get("chat"):
+            return
+        now = time.time()
+        if self._lastBufferChatTime is not None and now - self._lastBufferChatTime < constants.BUFFER_CHAT_MIN_INTERVAL:
+            return  # a flapping link must not turn into a wall of chat
+        self._lastBufferChatTime = now
+        self.sendChat(getMessage("buffering-local-chat-message"))
 
     def _toggleReadyInLockedRoom(self):
         """Turn a pause keypress into a readiness toggle while a server admin has the room locked.
@@ -491,6 +662,30 @@ class SyncplayClient(object):
             madeChangeOnPlayer = True
         return madeChangeOnPlayer
 
+    def _desyncReactionsAreMeaningless(self):
+        """Whether the measured time difference is a cache stall rather than a desync.
+
+        A stalled player is behind because it has nothing to play, and a room being held for
+        somebody else's stall is about to stop anyway. Seeking or changing speed in either case
+        corrects nothing and is exactly the juddering this feature exists to remove.
+        """
+        return self._buffering or self._bufferHoldActive
+
+    def _standDownFromDesyncReactions(self):
+        # Drop the evidence as well as the reaction: a stall that outlasts REWIND_SUSTAIN_DURATION
+        # would otherwise fire a rewind the moment it clears. Speed goes back immediately rather
+        # than waiting for the difference to fall under SLOWDOWN_RESET_THRESHOLD, which it cannot
+        # do while the player is not playing.
+        self._clearSustainedDesync("rewind")
+        self._clearSustainedDesync("slowdown")
+        self.behindFirstDetected = None
+        if self._speedChanged:
+            self._player.setSpeed(1.00)
+            self._speedChanged = False
+            self.ui.showMessage(getMessage("revert-notification"), not constants.SHOW_SLOWDOWN_OSD)
+            return True
+        return False
+
     def _changePlayerStateAccordingToGlobalState(self, position, paused, doSeek, setBy):
         madeChangeOnPlayer = False
         pauseChanged = paused != self.getGlobalPaused() or paused != self.getPlayerPaused()
@@ -502,24 +697,27 @@ class SyncplayClient(object):
         self._lastGlobalUpdate = time.time()
         if doSeek:
             madeChangeOnPlayer = self._serverSeeked(position, setBy)
-        rewindWanted = diff > self._config['rewindThreshold'] and not doSeek and not self._config['rewindOnDesync'] == False
-        if self._desyncSustainedFor("rewind", rewindWanted, constants.REWIND_SUSTAIN_DURATION):
-            madeChangeOnPlayer = self._rewindPlayerDueToTimeDifference(position, setBy)
-            self._clearSustainedDesync("rewind")
-        if self._config['fastforwardOnDesync'] and (self.userlist.currentUser.canControl() == False or self._config['dontSlowDownWithMe'] == True):
-            if diff < (constants.FASTFORWARD_BEHIND_THRESHOLD * -1) and not doSeek:
-                if self.behindFirstDetected is None:
-                    self.behindFirstDetected = time.time()
+        if self._desyncReactionsAreMeaningless():
+            madeChangeOnPlayer = self._standDownFromDesyncReactions() or madeChangeOnPlayer
+        else:
+            rewindWanted = diff > self._config['rewindThreshold'] and not doSeek and not self._config['rewindOnDesync'] == False
+            if self._desyncSustainedFor("rewind", rewindWanted, constants.REWIND_SUSTAIN_DURATION):
+                madeChangeOnPlayer = self._rewindPlayerDueToTimeDifference(position, setBy)
+                self._clearSustainedDesync("rewind")
+            if self._config['fastforwardOnDesync'] and (self.userlist.currentUser.canControl() == False or self._config['dontSlowDownWithMe'] == True):
+                if diff < (constants.FASTFORWARD_BEHIND_THRESHOLD * -1) and not doSeek:
+                    if self.behindFirstDetected is None:
+                        self.behindFirstDetected = time.time()
+                    else:
+                        durationBehind = time.time() - self.behindFirstDetected
+                        if (durationBehind > (self._config['fastforwardThreshold']-constants.FASTFORWARD_BEHIND_THRESHOLD))\
+                                and (diff < (self._config['fastforwardThreshold'] * -1)):
+                            madeChangeOnPlayer = self._fastforwardPlayerDueToTimeDifference(position, setBy)
+                            self.behindFirstDetected = time.time() + constants.FASTFORWARD_RESET_THRESHOLD
                 else:
-                    durationBehind = time.time() - self.behindFirstDetected
-                    if (durationBehind > (self._config['fastforwardThreshold']-constants.FASTFORWARD_BEHIND_THRESHOLD))\
-                            and (diff < (self._config['fastforwardThreshold'] * -1)):
-                        madeChangeOnPlayer = self._fastforwardPlayerDueToTimeDifference(position, setBy)
-                        self.behindFirstDetected = time.time() + constants.FASTFORWARD_RESET_THRESHOLD
-            else:
-                self.behindFirstDetected = None
-        if self._player.speedSupported and not doSeek and not paused and  not self._config['slowOnDesync'] == False:
-            madeChangeOnPlayer = self._slowDownToCoverTimeDifference(diff, setBy)
+                    self.behindFirstDetected = None
+            if self._player.speedSupported and not doSeek and not paused and  not self._config['slowOnDesync'] == False:
+                madeChangeOnPlayer = self._slowDownToCoverTimeDifference(diff, setBy)
         if paused == False and pauseChanged:
             madeChangeOnPlayer = self._serverUnpaused(setBy)
         elif paused == True and pauseChanged:
@@ -860,8 +1058,9 @@ class SyncplayClient(object):
             "maxFilenameLength": constants.FALLBACK_MAX_FILENAME_LENGTH,
             "setOthersReadiness": utils.meetsMinVersion(self.serverVersion, constants.SET_OTHERS_READINESS_MIN_VERSION),
             "afk": False,  # fork feature; overwritten by the server's featureList when supported
-            "setOthersAfk": False  # fork feature; separate flag so a targeted set can never
-                                   # misfire as a self-toggle on an older fork server
+            "setOthersAfk": False,  # fork feature; separate flag so a targeted set can never
+                                    # misfire as a self-toggle on an older fork server
+            "bufferPause": False  # fork feature; without it we fall back to pausing ourselves
         }
         if featureList:
             self.serverFeatures.update(featureList)
@@ -941,6 +1140,11 @@ class SyncplayClient(object):
         features["trustedDomains"] = True  # Can receive admin-published trusted domains (player-agnostic)
         features["afk"] = True  # Understands the AFK state channel (player-agnostic)
         features["roomLock"] = True  # Tracks admin room locks itself (player-agnostic)
+        # Understands the buffer-hold channel (player-agnostic: the stall heuristic works
+        # everywhere, mpv just answers more precisely). Unconditionally true even when
+        # pauseOnBuffer is off - that setting stops us reporting our own stalls, it does not stop
+        # us being told the room is waiting for somebody else's.
+        features["bufferPause"] = True
 
         return features
 
@@ -1028,6 +1232,11 @@ class SyncplayClient(object):
         if self.lastRewindTime is not None and abs(time.time() - self.lastRewindTime) < 1.0 and position > 5:
             self.ui.showDebugMessage("Ignored seek to {} after rewind".format(position))
             return
+        # Any seek we command - the sync logic's rewind, a server seek, a user offset change -
+        # invalidates the stall baseline: a player that takes a moment to land on the new position
+        # reports the old one meanwhile, which reads as frozen. Only openFile's rewind sets
+        # lastRewindTime, so _pauseChangeIsPlayerNoise does not cover these.
+        self._stallReference = None
         position += self.getUserOffset()
         if self._player and self.userlist.currentUser.file:
             if position < 0:
@@ -2064,6 +2273,7 @@ class UiManager(object):
         self.lastAlertOSDEndTime = None
         self.lastError = ""
         self._yapTimerWasPaused = False
+        self._lastBufferHoldText = ""  # so the "no hold" clear is sent once, not on every state tick
         self._pendingTrackProposals = []  # proposals that arrived before the player was ready
         self._pendingTrackProposalsArmed = False
 
@@ -2121,6 +2331,35 @@ class UiManager(object):
         # auto-hides shortly after the server stops sending it (on resume). No client-side clear needed.
         if self._client._player:
             self._client._player.updatePauseWarningOSD(message)
+
+    def updateBufferHold(self, values):
+        """Live overlay naming whoever the room is waiting for. None means no hold is in force.
+
+        Values come off the wire, so nothing here trusts them: the username is truncated, the
+        elapsed time is clamped to something a clock can show and a cache percentage outside 0-100
+        is simply not displayed. The lua element auto-hides once refreshes stop, so an absent hold
+        needs no explicit clear - but sending one costs nothing and makes the transition instant.
+        """
+        if not self._client._player:
+            return
+        if not isinstance(values, dict):
+            # Sent once, not on every tick: with no hold in force this runs each second forever,
+            # and the overlay is already gone.
+            if self._lastBufferHoldText != "":
+                self._lastBufferHoldText = ""
+                self._client._player.updateBufferHoldOSD("")
+            return
+        username = str(values.get("user") or "")[:constants.MAX_USERNAME_LENGTH]
+        try:
+            elapsed = max(0.0, min(float(values.get("elapsed") or 0), constants.BUFFER_HOLD_MAX))
+        except (TypeError, ValueError):
+            elapsed = 0.0
+        text = getMessage("buffer-hold-osd-message").format(username, utils.formatTime(elapsed))
+        cache = values.get("cache")
+        if isinstance(cache, (int, float)) and not isinstance(cache, bool) and 0 <= cache <= 100:
+            text += getMessage("buffer-hold-osd-cache-suffix").format(int(cache))
+        self._lastBufferHoldText = text
+        self._client._player.updateBufferHoldOSD(text)
 
     def showGenericOSD(self, values):
         # Server-driven generic OSD message (Set:osdMessage). Values come off the wire, so defaults

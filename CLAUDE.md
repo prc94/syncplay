@@ -34,6 +34,14 @@ mpv.net, VLC, MPC-HC, MPC-BE, mplayer2, IINA, Memento.
   is demonstrably at it (`Watcher._positionEstablished`, `Room.getPositionReferences`); anyone
   else is seeked to the room (`SyncFactory.pullWatcherIntoSync`) instead of dragging it to 00:00.
   Fixes joins/rejoins/player restarts rewinding the room. Server-side, so stock clients get it too.
+- **Buffer hold** (on by default; `--no-buffer-pause` server-side, `pauseOnBuffer` client-side): a
+  player stalled filling a cache still calls itself unpaused, so the room used to rewind and
+  speed-shift around it. The client detects the stall (mpv's `paused-for-cache`, else a
+  position-frozen heuristic) and reports it on `State`; the server holds the room paused, tells
+  everyone in chat and capable clients via a live `bufferHold` OSD, and releases on recovery,
+  staleness (`BUFFER_REPORT_STALE`), `BUFFER_HOLD_MAX` or a manual resume. The hold bypasses
+  `canControl` deliberately (server authority, like `pullWatcherIntoSync`) so it works in locked
+  rooms. Buffering clients suppress their own desync reactions.
 - **Flaky-link sync hardening** (always on, no flag): the forward-delay estimate (`PingService`) is
   outlier-rejected, asymmetry-smoothed and clamped; `messageAge` is capped (`MAX_MESSAGE_AGE`) at
   both points where it is added to a position; the rewind/slowdown reactions require sustained
@@ -248,7 +256,7 @@ fallback costs.
 - `syncplay/resources/syncplayintf.lua` — the mpv-side half of every mpv feature.
 - `syncplay/messages*.py` — i18n; `syncplay/constants.py` — all constants.
 - `docs/yap-timer-and-pause-warning.md`, `docs/server-admins.md`, `docs/join-position-guard.md`,
-  `docs/flaky-link-sync.md`
+  `docs/flaky-link-sync.md`, `docs/buffer-pause.md`
   — fork feature docs.
 - `Dockerfile`/`.dockerignore` — server container; `ci/`, `buildPy2exe.py`, `buildPy2app.py`,
   `GNUmakefile` — packaging.

@@ -76,6 +76,8 @@ if not found_any:
 for name in ("pausewarning_osd", "last_pausewarning_osd_time", "PAUSEWARNING_OSD_TIMEOUT",
              "PAUSEWARNING_BLINK_CYCLE", "PAUSEWARNING_BLINK_ON_TIME", "PAUSEWARNING_TEXT_COLOUR",
              "yaptimer_osd", "last_yaptimer_osd_time", "YAPTIMER_OSD_TIMEOUT", "YAPTIMER_TEXT_COLOUR",
+             "bufferhold_osd", "last_bufferhold_osd_time", "BUFFERHOLD_OSD_TIMEOUT",
+             "BUFFERHOLD_TEXT_COLOUR",
              "osd_messages", "MAX_OSD_MESSAGES"):
     decl = line_of("local " + name)
     uses = [i for i, l in enumerate(lines, 1) if name in l and not l.strip().startswith("local " + name)]
@@ -89,12 +91,21 @@ check("process_pausewarning_osd defined", line_of("function process_pausewarning
 in_update = re.search(r"function chat_update\(\).*?\nend\n", src, re.S).group(0)
 check("chat_update calls process_pausewarning_osd", "process_pausewarning_osd()" in in_update)
 check("chat_update calls process_yaptimer_osd", "process_yaptimer_osd()" in in_update)
-order = [in_update.find(s) for s in ("process_alert_osd()", "process_notification_osd(", "process_chat_item(", "process_yaptimer_osd()", "process_pausewarning_osd()")]
-check("render order: alert < notification < chat < yaptimer < pausewarning",
+check("chat_update calls process_bufferhold_osd", "process_bufferhold_osd()" in in_update)
+order = [in_update.find(s) for s in ("process_alert_osd()", "process_notification_osd(", "process_chat_item(", "process_yaptimer_osd()", "process_pausewarning_osd()", "process_bufferhold_osd()")]
+check("render order: alert < notification < chat < yaptimer < pausewarning < bufferhold",
       all(x >= 0 for x in order) and order == sorted(order), str(order))
 check("handler 'pausewarning-osd' registered", "mp.register_script_message('pausewarning-osd'" in src)
 check("handler 'yaptimer-osd' registered", "mp.register_script_message('yaptimer-osd'" in src)
 check("handler 'osd-message' registered", "mp.register_script_message('osd-message'" in src)
+check("handler 'bufferhold-osd' registered", "mp.register_script_message('bufferhold-osd'" in src)
+check("set_bufferhold_osd defined", line_of("function set_bufferhold_osd") is not None)
+check("process_bufferhold_osd defined", line_of("function process_bufferhold_osd") is not None)
+check("bufferhold setter defined before registration",
+      line_of("function set_bufferhold_osd") < line_of("mp.register_script_message('bufferhold-osd'"))
+# The status poll carries the cache state Syncplay's own detection reads (see docs/buffer-pause.md).
+check("status poll reports paused-for-cache", 'mp.get_property_native("paused-for-cache")' in src)
+check("status poll reports cache-buffering-state", 'mp.get_property_native("cache-buffering-state")' in src)
 # --- track proposals ---
 check("handler 'set-track-proposal' registered", "mp.register_script_message('set-track-proposal'" in src)
 check("handler 'publish-tracks' registered", "mp.register_script_message('publish-tracks'" in src)
@@ -219,6 +230,7 @@ check("setter defined before registration", deff < reg, "{} < {}".format(deff, r
 
 # 3. block balance inside the two new functions (function+if openers == end closers)
 for fname in ("process_pausewarning_osd", "process_yaptimer_osd", "set_pausewarning_osd", "set_yaptimer_osd",
+              "process_bufferhold_osd", "set_bufferhold_osd", "state_paused_and_position",
               "add_osd_message", "osd_messages_ass", "rrggbb_to_bgr",
               "track_layout_signature", "apply_track_proposal", "publish_tracks", "set_track_selection",
               "apply_tracks_keybind", "show_track_osd", "track_proposal_description"):

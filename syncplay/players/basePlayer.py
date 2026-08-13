@@ -11,6 +11,11 @@ class BasePlayer(object):
     genericOSDSupported = False
     # Players that can apply/publish admin track proposals set this True and override the two methods.
     trackProposalsSupported = False
+    # Players that can render the live buffer-hold overlay set this True and override updateBufferHoldOSD.
+    bufferHoldOSDSupported = False
+    # Players that can say for themselves whether they are stalled filling a cache set this True and
+    # override getBufferState. Everything else falls back to the client's position-stall heuristic.
+    bufferStateSupported = False
 
     '''
     This method is supposed to
@@ -33,6 +38,22 @@ class BasePlayer(object):
     '''
     def updatePauseWarningOSD(self, text):
         pass
+
+    '''
+    Show/refresh the live buffer-hold overlay with the given text (empty string hides it).
+    No-op for players that do not support it.
+    '''
+    def updateBufferHoldOSD(self, text):
+        pass
+
+    '''
+    Whether the player is currently stalled filling its cache, as (stalled, cachePercent).
+    cachePercent is None when the player does not report one. Returns None - not (False, None) -
+    when the player cannot answer at all, which is what sends the client to its stall heuristic
+    instead. No-op players inherit that None.
+    '''
+    def getBufferState(self):
+        return None
 
     '''
     Display a generic server-driven OSD message. isAss=True means text contains raw ASS override

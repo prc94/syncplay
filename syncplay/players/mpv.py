@@ -32,6 +32,8 @@ class MpvPlayer(BasePlayer):
     pauseWarningOSDSupported = True
     genericOSDSupported = True
     trackProposalsSupported = True
+    bufferHoldOSDSupported = True
+    bufferStateSupported = True
     speedSupported = True
     customOpenDialog = False
 
@@ -171,6 +173,21 @@ class MpvPlayer(BasePlayer):
         messageString = self._sanitizeText(text.replace("\\", constants.MPV_INPUT_BACKSLASH_SUBSTITUTE_CHARACTER))
         self._listener.sendLine(["script-message-to", "syncplayintf", "pausewarning-osd", messageString])
 
+    def updateBufferHoldOSD(self, text):
+        # Persistent overlay handled by syncplayintf.lua; empty text hides it. Refreshed each state
+        # tick while a room buffer hold is active; the lua element auto-hides once refreshes stop,
+        # so a dropped release message cannot leave it on screen for ever.
+        if getattr(self, "_listener", None) is None:
+            return
+        messageString = self._sanitizeText(text.replace("\\", constants.MPV_INPUT_BACKSLASH_SUBSTITUTE_CHARACTER))
+        self._listener.sendLine(["script-message-to", "syncplayintf", "bufferhold-osd", messageString])
+
+    def getBufferState(self):
+        # Answered from the same status poll that carries pause/position (see state_paused_and_position
+        # in syncplayintf.lua). None means this mpv never reported the properties - the client then
+        # falls back to its own stall heuristic rather than assuming "not buffering".
+        return self._bufferState
+
     def showGenericOSD(self, text, isAss, assAlignment, colour, size, duration):
         # Generic server-driven OSD message rendered by syncplayintf.lua. The payload travels as a
         # single JSON argument; _sanitizeText is deliberately NOT applied - it escapes braces, which
@@ -299,6 +316,43 @@ class MpvPlayer(BasePlayer):
             self._paused = self._client.getGlobalPaused()
             #self._client.ui.showDebugMessage("STORING GLOBAL PAUSED AS FILE IS NOT LOADED")
 
+
+    @staticmethod
+    def _parseStateReport(line):
+        """Turn a "<paused=no, pos=1.5, cache=no, cachepct=100>" report into a dict of strings.
+
+        Positional parsing used to be enough when the report only ever carried two fields; it is
+        not, now that the same line carries the cache state and an older copy of syncplayintf.lua
+        (mpv loads whatever script the user has, not necessarily ours) still sends the short form.
+        """
+        body = line[line.find("<paused=") + 1:]
+        end = body.find(">")
+        if end != -1:
+            body = body[:end]
+        fields = {}
+        for part in body.split(","):
+            key, sep, value = part.partition("=")
+            if sep:
+                fields[key.strip()] = value.strip()
+        return fields
+
+    def _storeBufferState(self, fields):
+        """Record mpv's own answer to "are you stalled filling the cache?".
+
+        `paused-for-cache` is exactly the condition worth acting on: playback wants to run and
+        cannot. A report without the key (older script) leaves the state None, which the client
+        reads as "this player cannot answer" and falls back to its stall heuristic - deliberately
+        not as "not buffering", which would silently disable the feature.
+        """
+        cache = fields.get("cache")
+        if cache is None or cache == "nil":
+            self._bufferState = None
+            return
+        try:
+            percent = int(float(fields.get("cachepct", "nil")))
+        except ValueError:
+            percent = None
+        self._bufferState = (cache == "yes" or cache == "true", percent)
 
     def lineReceived(self, line):
         if line:
@@ -506,9 +560,16 @@ class MpvPlayer(BasePlayer):
             self.eofDetected()
 
         if "<paused=" in line and ", pos=" in line:
-            update_string = line.replace(">", "<").replace("=", "<").replace(", ", "<").split("<")
-            paused_update = update_string[2]
-            position_update = update_string[4]
+            # Parsed as key=value pairs rather than by position: the same report also carries the
+            # cache fields, and a user running an older copy of syncplayintf.lua sends only the
+            # first two. Unknown or missing keys degrade instead of raising.
+            update_fields = self._parseStateReport(line)
+            paused_update = update_fields.get("paused", "nil")
+            position_update = update_fields.get("pos", "nil")
+            # Stored before either event is set: askForStatus unblocks the instant they are, and
+            # the three values belong to the same report - setting the events first lets the
+            # reactor thread read this report's position alongside the previous one's cache state.
+            self._storeBufferState(update_fields)
             if paused_update == "nil":
                 self._storePauseState(float(self._client.getGlobalPaused()))
             else:
@@ -519,7 +580,7 @@ class MpvPlayer(BasePlayer):
             else:
                 self._storePosition(float(position_update))
             self._positionAsk.set()
-            #self._client.ui.showDebugMessage("{} = {} / {}".format(update_string, paused_update, position_update))
+            #self._client.ui.showDebugMessage("{} = {} / {}".format(update_fields, paused_update, position_update))
 
         if "<get_syncplayintf_options>" in line:
             self._sendMpvOptions()
@@ -600,6 +661,7 @@ class MpvPlayer(BasePlayer):
         self.lastLoadedTime = None
         self.fileLoaded = False
         self.delayedFilePath = None
+        self._bufferState = None  # (stalled, cachePercent) once mpv has reported it; None until then
 
     def _create_listener(self, playerPath, filePath, args):
         try:
