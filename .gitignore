@@ -15,4 +15,6 @@ dist.7z
 !.appveyor.yml
 !.github
 !.dockerignore
+!.luacheckrc
 __pycache__
+.ruff_cache

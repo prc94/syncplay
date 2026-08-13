@@ -1,0 +1,17 @@
+# ruff configuration — a bug finder, deliberately not a formatter.
+#
+# Run: ruff check .
+# Gated by tests/suite_lint.py against tests/lint_baseline_ruff.txt.
+#
+# Only pyflakes (F) and syntax errors (E9) are enabled. Style and import-order rules are left
+# off on purpose: this repo is a fork that merges from upstream regularly, and reformatting
+# shared files would turn every upstream merge into a conflict resolution exercise for zero
+# correctness gain. The rules kept here catch things that actually break at runtime —
+# undefined names, redefinitions that silently shadow a real implementation, unreachable code.
+
+exclude = ["syncplay/vendor"]  # bundled third-party code, per CLAUDE.md
+target-version = "py38"
+line-length = 200  # informational only; no line-length rule is enabled
+
+[lint]
+select = ["F", "E9"]

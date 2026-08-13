@@ -15,7 +15,7 @@
 services:
   syncplay:
     build: .
-    image: syncplay-server
+    image: syncplay-xe:latest
     container_name: syncplay
     restart: unless-stopped
 

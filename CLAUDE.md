@@ -10,11 +10,11 @@ a Python 3 / Twisted application with a Qt (PySide2/PySide6) GUI, split into a *
 local media player) and a **server** (relays authoritative room state). Supported players: mpv,
 mpv.net, VLC, MPC-HC, MPC-BE, mplayer2, IINA, Memento.
 
-**This repo is a fork** (`prc94/syncplay`, remote via SSH with a repo-local `core.sshCommand`) that
-adds server-power features on top of upstream. `master` tracks upstream; `feature/yap-timer` adds
-the pause-tracking/OSD feature set; `feature/mgmt-overhaul` (branched from it) adds server admins
-and everything admin-driven. **The hard invariant of every fork feature: full interoperability with
-stock clients and servers** — new behavior is opt-in, feature-flagged, and always degrades to chat.
+**This repo is a fork** (`prc94/syncplay`) that adds server-power features on top of upstream.
+`master` tracks upstream; `feature/yap-timer` adds the pause-tracking/OSD feature set;
+`feature/mgmt-overhaul` (branched from it) adds server admins and everything admin-driven.
+**The hard invariant of every fork feature: full interoperability with stock clients and servers**
+— new behavior is opt-in, feature-flagged, and always degrades to chat.
 
 ### Fork features (docs in `docs/*.md`)
 - **Yap timer** (`--yap-timer`): tracks room pause time (current + per-file total), live mpv overlay.
@@ -43,7 +43,9 @@ stock clients and servers** — new behavior is opt-in, feature-flagged, and alw
 ## Running & building
 
 Upstream has **no test suite and no linter config**; CI (`.github/workflows/build.yml`) only builds
-installers. This fork adds its own suites in `tests/` (see "Testing the fork" below).
+installers. This fork adds its own suites in `tests/`, its own CI (`.github/workflows/tests.yml`),
+and lint configs (`ruff.toml`, `.luacheckrc`) — see "Testing the fork" below. Note `.gitignore`
+blanket-ignores dotfiles, so any new dotfile config needs an explicit `!` exception to be tracked.
 
 ```bash
 python3 syncplayClient.py           # GUI client (--no-gui for console)
@@ -168,7 +170,10 @@ position. Anything keyed to "the first report after event X" must be a latch rel
 ## Testing the fork
 
 Suites live in `tests/` — `python3 tests/run_all.py` (`--unit-only` for the ~15 s path); see
-`tests/README.md`. **Every new fork feature or fix ships with its suite committed there**, following
+`tests/README.md`. Run them **from the repo root with `PYTHONPATH` pointing at the repo**: a
+system- or venv-installed `syncplay` package otherwise shadows the checkout and you silently test
+the wrong code (a bare `PYTHONPATH=.` from another directory does exactly that).
+**Every new fork feature or fix ships with its suite committed there**, following
 these patterns (they found real bugs every time):
 - **Unit style:** instantiate `Room`/`SyncFactory`/protocol classes directly (`__new__` + set the
   few attrs needed); fake watchers implementing
@@ -180,19 +185,45 @@ these patterns (they found real bugs every time):
   playstate reports are dropped; followers adopt server-forced pause state). Assert on captured
   Chat/Set/State events with timestamps; scan server stdout for tracebacks.
   **Guard the port before booting** — a crashed run leaves a zombie server and later runs silently
-  test stale code.
-- **Lua:** no interpreter available — validate structurally (declaration order, block balance,
-  handler registration, render order) and port decision logic (blink duty cycle, layout-signature
-  matching) to Python for simulation.
-- **GUI:** PySide6 IS importable here; `QT_QPA_PLATFORM=offscreen` lets you construct the real
-  `ConfigDialog` and assert on live widgets.
+  test stale code. (When killing strays, `pkill -f "syncplayServer.py"` also matches your own
+  shell's command line — bracket it: `pkill -f "syncplayServer[.]py"`.)
+- **Lua:** `suite_lua.py` parse-gates the script against **both Lua 5.1 and 5.2** when `luac5.1`/
+  `luac5.2` are present — mpv embeds LuaJIT/5.1 on some platforms and 5.2 on others, a newer host
+  `luac` accepts syntax they reject, and a lua syntax error takes down the *entire* overlay rather
+  than degrading. Never substitute a bare `luac` for the versioned pair. `luacheck` (config in
+  `.luacheckrc`) adds scope/liveness analysis. On top of those: structural validation (declaration
+  order, block balance, handler registration, render order) and decision logic ported to Python for
+  simulation (blink duty cycle, layout-signature matching).
+- **Lint:** `suite_lint.py` runs ruff with pyflakes rules only (`ruff.toml`) — no style rules, since
+  reformatting upstream-shared files would conflict on every merge.
+- **Baselines:** both gates compare against `tests/lint_baseline_*.txt`, which record the findings
+  that already exist in **upstream** code. Do not "fix" a baselined finding — it conflicts on the
+  next upstream merge. Refresh with `--update-baseline` after merging upstream and review the diff;
+  new entries under fork-authored paths are a real signal. `tests/`+`ci/` are enforced at zero.
+- **GUI:** needs PySide6 (or PySide2) importable by the interpreter running the tests;
+  `QT_QPA_PLATFORM=offscreen` then lets you construct the real `ConfigDialog` and assert on live
+  widgets. Skip the suite with a clear message when the binding is absent.
+- **Every external-tool gate skips itself with a clear message when its tool is missing** — a suite
+  must never fail merely because a machine lacks lua or ruff (and must never silently pass either).
 
-### Environment quirks (this machine)
-- `python3` only (no `python`, no pip); **system-installed syncplay shadows the repo** — always run
-  tests with `PYTHONPATH=/path/to/repo` *from the repo* (a bare `PYTHONPATH=.` from elsewhere
-  imports the system copy and fails confusingly).
-- No docker, no lua interpreter. `pkill -f "syncplayServer.py"` matches your own shell's command
-  line — use `pkill -f "syncplayServer[.]py"`.
+## Tooling & environment — check, don't assume; ask, don't improvise
+
+This file is checked in and shared across every machine and worktree, so it deliberately records
+**nothing** about any particular host. Do not assume — and do not write down here — which of
+`python`/`python3`, `pip`, `docker`, `lua`, Qt bindings, or any other tool exists. Probe for what
+you need (`command -v X`, a trivial import) at the moment you need it. Host-specific findings
+belong in per-machine notes (your local memory), never in this file.
+
+When a tool that would meaningfully speed up or unblock the task turns out to be missing, **prompt
+the user to install it** instead of silently working around it. State, briefly:
+1. **What & why** — the tool, and the concrete thing it unblocks or speeds up in this task.
+2. **Footprint** — install size, dependencies pulled in, system-wide vs. venv/local, any
+   daemon/background service it adds.
+3. **Install guide** — the exact command(s) for the current platform and shell, flagging whether
+   `sudo` or an interactive run by the user is needed (they can type `! <command>` in the prompt).
+
+Then proceed with the best available fallback rather than blocking on the answer, and say what that
+fallback costs.
 
 ## Conventions to follow
 
@@ -221,3 +252,13 @@ these patterns (they found real bugs every time):
   — fork feature docs.
 - `Dockerfile`/`.dockerignore` — server container; `ci/`, `buildPy2exe.py`, `buildPy2app.py`,
   `GNUmakefile` — packaging.
+- `ruff.toml`, `.luacheckrc` — lint configs; `tests/lint_common.py` + `tests/lint_baseline_*.txt` —
+  the baseline machinery both gates share.
+
+## Planning workflow
+
+Whenever I ask you to add a new feature, implement something, or make a 
+non-trivial change, first enter plan mode: explore the relevant code, 
+draft a step-by-step plan, and present it via exit_plan_mode for my 
+approval before writing or editing any files. Skip this only for trivial 
+one-line fixes or when I explicitly say "just do it" / "skip planning." Also never try or suggest PRs to the original repository of SyncPlay. We only work on our fork.

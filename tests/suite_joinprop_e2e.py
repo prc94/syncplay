@@ -6,7 +6,7 @@ while handling the Hello. On the wire the fix is simply that the Hello now comes
 """
 import os, sys, time, shutil, tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from e2e_harness import MiniClient, ServerBoot, check, RESULTS, evts, chats_matching
+from e2e_harness import MiniClient, ServerBoot, check, RESULTS, chats_matching
 RESULTS.clear()
 
 SCEN = "S12:join-propagation"

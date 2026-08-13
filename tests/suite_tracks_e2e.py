@@ -1,5 +1,5 @@
 """E2E S9: admin track proposals over a live server."""
-import os, sys, time, json
+import os, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_harness import MiniClient, ServerBoot, check, RESULTS, evts, chats_matching
 RESULTS.clear()

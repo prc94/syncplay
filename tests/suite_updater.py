@@ -360,7 +360,6 @@ print(json.dumps({"release": syncplay.fork_release,
         gui_ok = gui_ok and dlg.config["updateRepo"] == "someone/else"
         gui_ok = gui_ok and not updater.validateRepo("bad repo!")
     except Exception as e:
-        import traceback
         gui_detail = "offscreen construction failed: {}: {}".format(type(e).__name__, e)
     check("GUI: Updates group constructs and binds", gui_ok, gui_detail)
 

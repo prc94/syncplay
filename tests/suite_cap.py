@@ -4,9 +4,7 @@ import sys
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)  # import the repo's syncplay, not any system-installed copy
 import time, sys
-import unittest.mock as mock
 from syncplay import constants
-from syncplay.utils import meetsMinVersion
 from syncplay.server import Room, SyncFactory
 from syncplay.protocols import SyncServerProtocol, PingService
 

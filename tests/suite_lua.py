@@ -1,16 +1,41 @@
-"""Structural validation of syncplayintf.lua (no lua runtime available)."""
+"""Validation of syncplayintf.lua: real parse + lint gates, plus structural and simulated checks.
+
+The parse gate is the highest-value check here. A syntax error in this file does not degrade
+gracefully — mpv fails to load the script and the *entire* overlay goes with it: chat, the yap
+timer, the pause warning and track proposals all vanish at once, presenting as "the feature
+didn't show up" rather than as an error.
+
+It is checked against Lua 5.1 *and* 5.2 because mpv embeds different versions on different
+platforms (LuaJIT/5.1 on Windows and several distros, 5.2 elsewhere), and a newer host `luac`
+will happily accept 5.3+ syntax such as `//` or bitwise operators that every mpv build rejects.
+Checking only against whatever `luac` happens to be installed is worse than not checking.
+
+The structural and simulation checks below cover what no linter can: OSD render order, blink
+duty cycle, timeout-vs-State-cadence maths, and constants mirrored from constants.py.
+
+Parse and lint gates skip cleanly when the lua toolchain is absent.
+"""
 import os
+import subprocess
 import sys
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)  # import the repo's syncplay, not any system-installed copy
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import re, sys
+from lint_common import (ToolMissing, diffAgainstBaseline, humanFor, loadBaseline, runLuacheck,
+                         writeBaseline)
 from syncplay import constants  # cache-size mirror assertions
+
+LUA_PATH = os.path.join("syncplay", "resources", "syncplayintf.lua")
+LUACHECK_BASELINE = os.path.join(REPO_ROOT, "tests", "lint_baseline_luacheck.txt")
 src = open(os.path.join(REPO_ROOT, "syncplay", "resources", "syncplayintf.lua")).read()
 lines = src.splitlines()
 ok_all = True
+RESULTS = []
 def check(name, cond, detail=""):
     global ok_all
     ok_all = ok_all and bool(cond)
+    RESULTS.append((name, bool(cond)))
     print("[{}] Lua :: {} {}".format("PASS" if cond else "FAIL", name, ("- " + detail) if detail else ""))
 
 def line_of(pat):
@@ -18,6 +43,34 @@ def line_of(pat):
         if pat in l:
             return i
     return None
+
+if "--update-baseline" in sys.argv:
+    try:
+        fingerprints, _ = runLuacheck(LUA_PATH)
+    except ToolMissing:
+        print("luacheck is not installed - cannot regenerate the baseline")
+        sys.exit(1)
+    writeBaseline(LUACHECK_BASELINE, fingerprints, "luacheck", "suite_lua.py")
+    print("Wrote {} entries to {}".format(len(fingerprints), os.path.relpath(LUACHECK_BASELINE, REPO_ROOT)))
+    sys.exit(0)
+
+# 0. real parse gate against every lua version mpv is known to embed
+COMPILERS = [("5.1", "luac5.1"), ("5.2", "luac5.2")]
+found_any = False
+for version, binary in COMPILERS:
+    try:
+        proc = subprocess.run([binary, "-p", LUA_PATH], cwd=REPO_ROOT,
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    except FileNotFoundError:
+        print("[SKIP] Lua :: parses under Lua {} ({} not installed)".format(version, binary))
+        continue
+    found_any = True
+    check("parses under Lua {}".format(version), proc.returncode == 0,
+          proc.stdout.strip()[:200] if proc.returncode else "clean")
+if not found_any:
+    # Deliberately not falling back to a bare `luac`: an unversioned one is typically newer than
+    # anything mpv embeds, so a pass would be meaningless while looking reassuring.
+    print("[SKIP] Lua :: parse gate - install lua5.1 and lua5.2 to enable it")
 
 # 1. declaration-before-use ordering (file-scope locals must precede closures using them)
 for name in ("pausewarning_osd", "last_pausewarning_osd_time", "PAUSEWARNING_OSD_TIMEOUT",
@@ -192,7 +245,6 @@ yto = float(re.search(r"YAPTIMER_OSD_TIMEOUT = ([\d.]+)", src).group(1))
 check("yap timeout {}s > 1s State cadence".format(yto), yto > 1.5)
 
 # 6. whole-file rough sanity: quotes and braces pairing unchanged vs git HEAD version
-import subprocess
 head = subprocess.run(["git", "-C", REPO_ROOT, "show", "HEAD:syncplay/resources/syncplayintf.lua"],
                       capture_output=True, text=True).stdout
 def sig(s):
@@ -201,4 +253,23 @@ s_now, s_head = sig(src), sig(head)
 check("whole-file paren balance", s_now[0] == s_now[1], "{} vs {}".format(s_now[0], s_now[1]))
 check("whole-file even quote count", s_now[2] == 0)
 check("committed HEAD version matches working tree", src == head, "identical" if src == head else "DIFFERS")
+
+# 7. luacheck gate — scope/liveness analysis over every identifier in the file, which is a
+# superset of the hand-maintained declaration-order list in section 1 (that list only protects
+# names someone remembered to add; this covers new OSD elements automatically).
+# Baselined: every finding present when this gate was added is in upstream's repl.lua ancestry.
+try:
+    lc_findings, lc_human = runLuacheck(LUA_PATH)
+except ToolMissing:
+    print("[SKIP] Lua :: luacheck gate (luacheck not installed)")
+else:
+    lc_new, lc_stale = diffAgainstBaseline(lc_findings, loadBaseline(LUACHECK_BASELINE))
+    check("no new luacheck findings", not lc_new,
+          "{} new".format(len(lc_new)) if lc_new else "{} findings, all baselined".format(len(lc_findings)))
+    for fingerprint in lc_new[:20]:
+        print("    NEW: {}".format(humanFor(fingerprint, lc_findings, lc_human)))
+    if lc_stale:
+        print("    note: {} baseline entries no longer occur (run --update-baseline to prune)".format(len(lc_stale)))
+
+print("\n===== LUA SUMMARY: {} checks, {} failed =====".format(len(RESULTS), sum(1 for _, ok in RESULTS if not ok)))
 sys.exit(0 if ok_all else 1)

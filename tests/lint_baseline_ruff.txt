@@ -1,0 +1,47 @@
+# ruff baseline — findings that already existed in UPSTREAM code.
+#
+# DO NOT "fix" these. They live in files upstream also maintains; changing them would conflict
+# on every upstream merge. They are recorded so the gate can fail on genuinely new findings.
+#
+# One line per occurrence: <path>|<code>|<symbol>. No line numbers, so entries survive edits
+# above them. Regenerate after an upstream merge with:
+#     python3 tests/suite_lint.py --update-baseline
+# and review the diff — entries appearing for fork-authored code are a real signal, not noise.
+appdmg.py|F821|defines
+appdmg.py|F821|defines
+appdmg.py|F821|defines
+setup.py|F401|os
+syncplay/client.py|F401|syncplay.version
+syncplay/client.py|F811|version
+syncplay/client.py|F841|newPath
+syncplay/client.py|F841|positionBeforeSeek
+syncplay/ep_client.py|F401|sys
+syncplay/messages_eo.py|F601|"mpv-failed-advice"
+syncplay/players/mplayer.py|F401|sys
+syncplay/players/mpv.py|F401|syncplay.utils.isASCII
+syncplay/players/mpv.py|F401|sys
+syncplay/players/mpv.py|F841|answer
+syncplay/players/mpv.py|F841|e
+syncplay/players/mpv.py|F841|old_position
+syncplay/players/vlc.py|F401|socket
+syncplay/players/vlc.py|F811|clientConnectionLost
+syncplay/server.py|F841|rooms
+syncplay/ui/ConfigurationGetter.py|F401|twisted.trial.unittest
+syncplay/ui/GuiConfiguration.py|F401|syncplay.vendor.Qt.QtCore.QLine
+syncplay/ui/GuiConfiguration.py|F401|syncplay.vendor.Qt.QtCore.QPoint
+syncplay/ui/GuiConfiguration.py|F401|syncplay.vendor.Qt.QtCore.QSize
+syncplay/ui/GuiConfiguration.py|F401|syncplay.vendor.Qt.QtGui.QCursor
+syncplay/ui/GuiConfiguration.py|F401|syncplay.vendor.Qt.QtGui.QIcon
+syncplay/ui/GuiConfiguration.py|F401|syncplay.vendor.Qt.QtGui.QImage
+syncplay/ui/GuiConfiguration.py|F401|syncplay.vendor.Qt.QtWidgets.QApplication
+syncplay/ui/GuiConfiguration.py|F401|syncplay.vendor.Qt.QtWidgets.QDoubleSpinBox
+syncplay/ui/GuiConfiguration.py|F401|syncplay.vendor.Qt.__binding__
+syncplay/ui/GuiConfiguration.py|F841|config
+syncplay/ui/GuiConfiguration.py|F841|config
+syncplay/ui/__init__.py|F841|e
+syncplay/ui/consoleUI.py|F401|os
+syncplay/ui/consoleUI.py|F401|syncplay.utils.isURL
+syncplay/ui/gui.py|F401|datetime.datetime
+syncplay/ui/gui.py|F401|sys
+syncplay/ui/gui.py|F811|Qt
+syncplay/utils.py|F401|sys

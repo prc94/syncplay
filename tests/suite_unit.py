@@ -3,7 +3,7 @@ import os
 import sys
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)  # import the repo's syncplay, not any system-installed copy
-import time, sys, traceback
+import time, sys
 import unittest.mock as mock
 
 RESULTS = []  # (suite, name, ok, detail)

@@ -5,11 +5,10 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)  # import the repo's syncplay, not any system-installed copy
 import time, types
 from syncplay import constants
-from syncplay.server import Room, ControlledRoom, SyncFactory, Watcher
+from syncplay.server import Room, SyncFactory, Watcher
 from syncplay.protocols import SyncServerProtocol, SyncClientProtocol
 import syncplay.messages as M
 M.setLanguage("en")
-from syncplay.messages import getMessage
 
 RESULTS = []
 def check(name, cond, detail=""):

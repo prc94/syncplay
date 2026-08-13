@@ -1,5 +1,5 @@
 """E2E: /osd command through a live server with a real managed-room controller flow."""
-import os, sys, time, json
+import os, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_harness import MiniClient, ServerBoot, check, RESULTS, evts, chats_matching
 RESULTS.clear()

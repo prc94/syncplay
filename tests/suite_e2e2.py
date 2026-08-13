@@ -1,5 +1,5 @@
 """E2E round 2: pause/unpause flapping stress + cross-room isolation."""
-import os, sys, time
+import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_harness import MiniClient, ServerBoot, run_clients, evts, chats_matching, check, RESULTS
 RESULTS.clear()

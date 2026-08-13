@@ -8,7 +8,7 @@ import unittest.mock as mock
 from syncplay import constants
 from syncplay.utils import meetsMinVersion
 from syncplay.server import Room, ControlledRoom, SyncFactory, Watcher
-from syncplay.protocols import SyncServerProtocol, SyncClientProtocol, PingService
+from syncplay.protocols import SyncServerProtocol, SyncClientProtocol
 import syncplay.messages as M
 M.setLanguage("en")
 

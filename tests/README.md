@@ -22,8 +22,46 @@ python3 tests/suite_admin.py          # any suite runs standalone
 | `suite_fileswitch.py` | Advancing to the next file: the file-change latch vs. playstate-less/stale States, latch expiry, teleport guard and join pulls still intact |
 | `suite_joinprop.py` | Join-time propagation of room state: Hello-vs-Set ordering, domain-overlay reset ownership, track proposals queued until the player is up, player-less chat, cache eviction |
 | `suite_lag.py` | Flaky-link sync hardening: `PingService` outlier/asymmetry/clamp behaviour, `messageAge` caps, sustained-desync gating, plus a bidirectional link simulation asserting an in-sync client is never seeked or speed-shifted while a real desync still converges |
-| `suite_lua.py` | `syncplayintf.lua` static checks (declaration order, block balance, render order) + Python-ported simulations (blink timing, layout signatures) |
+| `suite_lua.py` | `syncplayintf.lua`: **parse gate against Lua 5.1 + 5.2**, luacheck scope gate, static checks (declaration order, block balance, render order) + Python-ported simulations (blink timing, layout signatures) |
+| `suite_lint.py` | **ruff (pyflakes rules)** over the Python tree — undefined names, silent redefinitions, dead assignments in branches the runtime suites never reach |
 | `suite_e2e*.py` | Live-server scenarios: real `syncplayServer.py` subprocesses driven by protocol-faithful socket clients |
+
+## Lint and parse gates
+
+Both gates need external tools and **skip themselves cleanly when those are absent**, so the suites
+still run on a bare machine — but then they are not checking anything. To enable them:
+
+```bash
+sudo apt install lua5.1 lua5.2 lua-check   # parse + scope gates for syncplayintf.lua
+pipx install ruff                          # Python static analysis
+```
+
+**Why 5.1 *and* 5.2:** mpv embeds LuaJIT/5.1 on Windows and several distros, 5.2 elsewhere. A newer
+host `luac` accepts syntax (`goto`, `//`, bitwise operators) that some mpv builds reject, and a lua
+syntax error does not degrade — mpv fails to load the script and chat, the yap timer, the pause
+warning and track proposals all disappear together, looking like "the feature didn't show up".
+Checking against only whatever `luac` happens to be installed is worse than not checking.
+
+**Baselines.** Every finding that existed when these gates were added is in upstream code (38 ruff,
+32 luacheck). Fixing them would conflict on every upstream merge, so they are recorded in
+`lint_baseline_ruff.txt` / `lint_baseline_luacheck.txt` and the gates fail only on findings *not*
+in the baseline. Fingerprints (`path|code|symbol`) carry no line numbers, so entries survive edits
+above them, and they are compared as a multiset — a second copy of a baselined finding is still
+reported. `tests/` and `ci/` are fork-authored and enforced at zero; `suite_lint.py` fails if
+anything under them ever lands in the baseline.
+
+After merging upstream, refresh and **review the diff** — new entries under fork-authored code are
+a real signal, not noise:
+
+```bash
+python3 tests/suite_lint.py --update-baseline   # ruff
+python3 tests/suite_lua.py  --update-baseline   # luacheck
+```
+
+Known upstream findings worth being aware of (left unfixed, deliberately): a duplicate
+`clientConnectionLost` in `players/vlc.py` that shadows the debug-logging one, a `ctrl+l` binding in
+`syncplayintf.lua` pointing at an undefined `clear_log_buffer`, and a duplicate `mpv-failed-advice`
+key in `messages_eo.py`.
 
 ## Harness notes (`e2e_harness.py`)
 
