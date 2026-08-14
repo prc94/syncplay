@@ -1433,6 +1433,8 @@ class Room(object):
         self._bufferHoldBy = None  # Username the current buffer hold is attributed to (None = no hold). Runtime-only
         self._bufferHoldStartedAt = None  # Wall-clock time the hold began
         self._bufferHoldPriorState = None  # Play state to restore when the hold is released
+        self._playStateChangedAt = None  # Wall-clock time _playState last changed. Runtime-only, feeds the stale-echo guard
+        self._previousPlayState = None  # What it was before that change, so a watcher still reporting it can be recognised as an echo
 
     def __str__(self, *args, **kwargs):
         return self.getName()
@@ -1523,10 +1525,27 @@ class Room(object):
             return self._position
         return self.estimatePosition()
 
+    def _setPlayState(self, state):
+        """The one place _playState is written, so the stale-echo guard always sees the change.
+
+        A watcher's next report describes the room as it was one round trip ago; recognising that
+        needs to know what the room *was* and when it stopped being that. See
+        Watcher._pauseReportIsStaleEcho and docs/flaky-link-sync.md.
+        """
+        if state == self._playState:
+            return
+        self._previousPlayState = self._playState
+        self._playStateChangedAt = time.time()
+        self._playState = state
+
+    def lastPlayStateChange(self):
+        """(when it changed, what it was before) - (None, None) if it has never changed."""
+        return self._playStateChangedAt, self._previousPlayState
+
     def setPaused(self, paused=STATE_PAUSED, setBy=None):
         if not self.canControl(setBy):
             return
-        self._playState = paused
+        self._setPlayState(paused)
         self._setBy = setBy
         self.writeToDb()
 
@@ -1553,7 +1572,7 @@ class Room(object):
         self._bufferHoldBy = watcher.getName()
         self._bufferHoldStartedAt = time.time()
         self._bufferHoldPriorState = self._playState
-        self._playState = self.STATE_PAUSED
+        self._setPlayState(self.STATE_PAUSED)
 
     def releaseBufferHold(self, restore=True):
         """End the hold, optionally putting the room back into the state it was in beforehand.
@@ -1567,7 +1586,7 @@ class Room(object):
         self._bufferHoldStartedAt = None
         self._bufferHoldPriorState = None
         if restore and priorState is not None:
-            self._playState = priorState
+            self._setPlayState(priorState)
         return priorState
 
     def bufferHoldIsActive(self):
@@ -2046,6 +2065,34 @@ class Watcher(object):
             return False
         return self._room.isPaused() and not paused or not self._room.isPaused() and paused
 
+    def _pauseReportIsStaleEcho(self, paused, messageAge):
+        """Whether a play-state report that contradicts the room is just this watcher lagging.
+
+        Every watcher reports its play state once a second whether or not anything changed. On a
+        slow link that report describes the room as it was a round trip ago, so when the room has
+        changed in the meantime the report arrives contradicting it - and the plain reading of that
+        contradiction is "the user pressed pause". Acting on it flips the room, which produces the
+        same contradiction from the other side one round trip later: the room then ping-pongs
+        indefinitely at one flip per RTT, every flip blamed on the watcher with the worst
+        connection. See docs/flaky-link-sync.md.
+
+        Only the *heartbeat* is treated this way. A deliberate keypress is announced on the wire by
+        the client bumping ignoringOnTheFly.client in the very message that carries the change (see
+        SyncClientProtocol.sendState), and the caller filters those out before asking - so a user
+        pressing pause during the window is still obeyed, however fast they do it.
+
+        The window scales with the measured forward delay, because staleness is exactly what the
+        delay measures: on a LAN it collapses to a quarter-second and catches only a true echo.
+        """
+        changedAt, previousState = self._room.lastPlayStateChange()
+        if changedAt is None or previousState is None:
+            return False
+        if paused != (previousState == Room.STATE_PAUSED):
+            return False  # not the state we just left: this is a genuine change of mind
+        window = messageAge * constants.PAUSE_ECHO_GUARD_FACTOR + constants.PAUSE_ECHO_GUARD_MARGIN
+        window = min(max(window, constants.PAUSE_ECHO_GUARD_MIN), constants.PAUSE_ECHO_GUARD_MAX)
+        return time.time() - changedAt <= window
+
     def _updatePositionByAge(self, messageAge, paused, position):
         if not paused:
             # Capped for the same reason the client caps it: a watcher on a jittery link produces
@@ -2148,8 +2195,18 @@ class Watcher(object):
         self._lockedPauseLatch = paused
         self._server.setReady(self, not self.isReady())
 
-    def updateState(self, position, paused, doSeek, messageAge):
+    def updateState(self, position, paused, doSeek, messageAge, echoCandidate=False):
+        """Fold one State report into the room.
+
+        `echoCandidate` says the report is a plain heartbeat - it carried a play state but no
+        ignoringOnTheFly.client marker, so nothing about it claims the user did anything. Only those
+        are eligible for the stale-echo guard below; the default is False so that a caller which
+        knows nothing about the distinction (the fork's unit suites) keeps the old semantics.
+        """
         pauseChanged = self.__hasPauseChanged(paused)
+        staleEcho = pauseChanged and echoCandidate and self._pauseReportIsStaleEcho(paused, messageAge)
+        if staleEcho:
+            pauseChanged = False  # this watcher has not caught up with us yet; it is not asking for anything
         previousPosition = self.getPosition() if self._room is not None else None  # extrapolated with the *old* _lastUpdatedOn, so it must be read first
         fileChanged = self._consumeFileChange(position, previousPosition)
         self._lastUpdatedOn = time.time()
@@ -2157,8 +2214,8 @@ class Watcher(object):
             # Returning to active watching clears AFK: unpausing or seeking - even a
             # non-controller's attempt that is about to be reverted. Pausing does NOT
             # clear it (stepping away is the whole point, and the AFK keybind pauses on
-            # the way out). Echoes of server-forced changes never reach here
-            # (ignoring-on-the-fly gate + __hasPauseChanged compares against room state).
+            # the way out). A lagging watcher's echo of a change we made is not activity
+            # either, which is what the stale-echo guard above takes care of.
             self._server.setAfk(self, False)
         if pauseChanged and not paused and self.getRoom().bufferHoldIsActive() and self.getRoom().canControl(self):
             # Somebody entitled to control the room resumed it while it was being held. Their call
@@ -2172,7 +2229,7 @@ class Watcher(object):
                 self._server.updatePauseWarning(self.getRoom(), paused, self)
             else:
                 self._readinessToggleFromRejectedPause(paused, fileChanged)
-        elif paused is not None:
+        elif paused is not None and not staleEcho:
             self._lockedPauseLatch = None  # back in agreement with the room: the next press counts again
         if position is not None:
             position = self._updatePositionByAge(messageAge, paused, position)

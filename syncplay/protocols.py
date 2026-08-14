@@ -77,6 +77,7 @@ class SyncClientProtocol(JSONCommandProtocol):
         self.hadFirstPlaylistIndex = False
         self.hadFirstStateUpdate = False
         self._sentBuffering = False  # Whether our last State claimed we were buffering (drives the one falling-edge report)
+        self._pendingStateChange = False  # A user's pause/seek that could not be sent yet, held until the outstanding one is acknowledged
         self._pingService = PingService()
 
     def showDebugMessage(self, line):
@@ -325,9 +326,22 @@ class SyncClientProtocol(JSONCommandProtocol):
         hold = hold if isinstance(hold, dict) else None
         self._client.setBufferHoldActive(hold is not None)
         self._client.ui.updateBufferHold(hold)
-        if position is not None and paused is not None and not self.clientIgnoringOnTheFly:
+        # A keypress we are still holding is newer than anything this message can be carrying: the
+        # State that acknowledges our last change was composed by the server before it had heard
+        # about this one. Applying it first would put the player back and then send *that* as the
+        # user's action - the very thing the pending change exists to prevent.
+        supersededByPendingChange = self._pendingStateChange and not self.clientIgnoringOnTheFly
+        if position is not None and paused is not None and not self.clientIgnoringOnTheFly \
+                and not supersededByPendingChange:
             self._client.updateGlobalState(position, paused, doSeek, setBy, messageAge)
         position, paused, doSeek, stateChange = self._client.getLocalState()
+        if self._pendingStateChange and not self.clientIgnoringOnTheFly:
+            # A keypress we could not send at the time (see sendState) - the acknowledgement has
+            # arrived, so it goes out now, as the change it always was. Without this it is simply
+            # lost, and the next State from the server puts the player back: on a link where a round
+            # trip is most of a second, that is "I pressed pause and nothing happened".
+            self._pendingStateChange = False
+            stateChange = True
         self.sendState(position, paused, doSeek, latencyCalculation, stateChange)
 
     def sendState(self, position, paused, doSeek, latencyCalculation, stateChange=False):
@@ -354,7 +368,13 @@ class SyncClientProtocol(JSONCommandProtocol):
             state["ping"]["latencyCalculation"] = latencyCalculation
         state["ping"]["clientLatencyCalculation"] = self._pingService.newTimestamp()
         state["ping"]["clientRtt"] = self._pingService.getRtt()
-        if stateChange:
+        if stateChange and not clientIgnoreIsNotSet:
+            # The playstate was left out above because an earlier change is still unacknowledged, so
+            # this one never reached the wire. Remember it instead of dropping it (handleState sends
+            # it the moment the acknowledgement lands) and do not bump the counter for a message
+            # nobody is going to see - that would only make the round trip longer.
+            self._pendingStateChange = True
+        elif stateChange:
             self.clientIgnoringOnTheFly += 1
         if self.serverIgnoringOnTheFly or self.clientIgnoringOnTheFly:
             state["ignoringOnTheFly"] = {}
@@ -877,12 +897,18 @@ class SyncServerProtocol(JSONCommandProtocol):
     @requireLogged
     def handleState(self, state):
         position, paused, doSeek, latencyCalculation = None, None, None, None
+        clientFlaggedChange = False
         if "ignoringOnTheFly" in state:
             ignore = state["ignoringOnTheFly"]
             if "server" in ignore:
                 if self.serverIgnoringOnTheFly == ignore["server"]:
                     self.serverIgnoringOnTheFly = 0
             if "client" in ignore:
+                # The client bumps this counter in the same message that carries a change it made,
+                # and omits the playstate entirely while an earlier one is unacknowledged - so this
+                # key is how a deliberate keypress announces itself. Its absence is what lets the
+                # stale-echo guard tell a heartbeat from a command (Watcher._pauseReportIsStaleEcho).
+                clientFlaggedChange = True
                 self.clientIgnoringOnTheFly = ignore["client"]
         if "playstate" in state:
             position, paused, doSeek = self._extractStatePlaystateArguments(state)
@@ -905,7 +931,9 @@ class SyncServerProtocol(JSONCommandProtocol):
             if isinstance(buffering, dict):
                 self._watcher.updateBuffering(buffering.get("active", False), buffering.get("cache"))
         if self.serverIgnoringOnTheFly == 0:
-            self._watcher.updateState(position, paused, doSeek, self._pingService.getLastForwardDelay())
+            echoCandidate = "playstate" in state and not clientFlaggedChange
+            self._watcher.updateState(position, paused, doSeek,
+                                      self._pingService.getLastForwardDelay(), echoCandidate)
 
     def handleError(self, error):
         self.dropWithError(error["message"])  # TODO: more processing and fallbacking

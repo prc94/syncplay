@@ -76,6 +76,23 @@ is not held for on those players — a deliberate trade, since a false hold is w
 A player that reports nothing at all falls back to the heuristic rather than reading as "not
 buffering" — absence of evidence must not silently disable the feature.
 
+**While a hold has the room paused, the ordinary rules cannot answer** (`_stallStandsWhileHeld`).
+Detection is built on a position that should be advancing and is not — but nothing advances during a
+hold, because the hold stopped it. Reading that as recovery is what made a hold cancel itself about
+a second after it started, over and over: measured against a link that could not fill the cache,
+one hold/release cycle every 1.2 s, on exactly the connection the feature exists for. So while
+`_bufferHoldActive` (anyone's hold — it stops our playback just the same) or our own
+`_bufferFallbackPaused` is set:
+
+- a player that tracks its own cache is simply asked, so mpv holds for as long as it is really
+  stalled — up to the server's `BUFFER_HOLD_MAX`, which is now reachable — and releases the moment
+  the cache is full;
+- anything else keeps its verdict for `BUFFER_HOLD_SETTLE`, then lets the room try again. Long
+  enough to be worth having paused for, short enough not to sit on a cache that did fill.
+
+The stall baseline and the sustained-evidence clock are both dropped while held, so the poll right
+after a release cannot declare a fresh stall on evidence gathered before it.
+
 ### Holding the room (server)
 
 The report rides the 1 s `State` heartbeat (`{"buffering": {"active": …, "cache": …}}`), because it
@@ -164,6 +181,7 @@ waiting for a difference that cannot shrink while the player is not playing.
 | `BUFFER_STALL_DETECT` | 0.8 s | Frozen for this long before it counts as a stall |
 | `BUFFER_STALL_TOLERANCE` | 0.15 s | Progress within that window that still counts as frozen |
 | `BUFFER_RECOVER_HOLD` | 1.0 s | Sustained progress before declaring recovery |
+| `BUFFER_HOLD_SETTLE` | 4.0 s | How long a stall stands while the room is paused *for it*, on players that cannot report their own cache |
 | `BUFFER_REPORT_STALE` | 3.0 s | After this without a report, a watcher stops holding the room |
 | `BUFFER_HOLD_MAX` | 120 s | Give up on a hold that has lasted this long |
 | `BUFFER_CHAT_MIN_INTERVAL` | 20 s | Minimum gap between a user's own buffering chat notices |

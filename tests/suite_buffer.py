@@ -186,6 +186,50 @@ try:
         poll(c, 100.0)
     check("stall: a paused room is never buffering", not c.isBuffering())
 
+    # -------- unless the room is paused *for us* --------
+    # The hold pauses the room; the rule above then reads that pause as "playback stopped, so there
+    # is nothing to be stalled about" and declares recovery about a second later. The hold releases,
+    # the cache is still empty, and it all starts again: measured at one hold/release cycle every
+    # 1.2s against a link that could not fill the cache, which is exactly the case it exists for.
+    def stalledUnderHold(fallback=False, native=None):
+        cl = make_client(nativeBufferState=native is not None)
+        for _ in range(12):
+            poll(cl, 100.0)                       # frozen while playing: a genuine stall
+        assert cl.isBuffering(), "fixture: the stall should be detected before the hold starts"
+        if native is not None:
+            cl._player.bufferState = (native, 30)
+        if fallback:
+            cl._bufferFallbackPaused = True       # no server-side feature: we paused the room ourselves
+        else:
+            cl._bufferHoldActive = True           # the server is holding the room for us
+        cl._globalPaused = True
+        return cl
+
+    c = stalledUnderHold()
+    for _ in range(int((constants.BUFFER_HOLD_SETTLE - 0.5) / 0.1)):
+        poll(c, 100.0, paused=True)               # the player is paused *by the hold*
+    check("hold: the stall stands while the room is paused waiting for us", c.isBuffering())
+    for _ in range(int((constants.BUFFER_RECOVER_HOLD + 1.0) / 0.1)):
+        poll(c, 100.0, paused=True)
+    check("hold: but only for BUFFER_HOLD_SETTLE, so the room gets to try again",
+          not c.isBuffering())
+
+    c = stalledUnderHold(fallback=True)
+    for _ in range(int((constants.BUFFER_HOLD_SETTLE - 0.5) / 0.1)):
+        poll(c, 100.0, paused=True)
+    check("hold: our own fallback pause counts the same way", c.isBuffering())
+
+    # A player that tracks its own cache is simply asked - so mpv holds for as long as it is really
+    # stalled (up to the server's BUFFER_HOLD_MAX) and releases the moment the cache is full.
+    c = stalledUnderHold(native=True)
+    for _ in range(int((constants.BUFFER_HOLD_SETTLE + 5.0) / 0.1)):
+        poll(c, 100.0, paused=True)
+    check("hold: a player that knows its cache is believed past the settle window", c.isBuffering())
+    c = stalledUnderHold(native=False)
+    for _ in range(int((constants.BUFFER_RECOVER_HOLD + 0.5) / 0.1)):
+        poll(c, 100.0, paused=True)
+    check("hold: and believed when it says the cache has filled", not c.isBuffering())
+
     # -------- the end of a file looks exactly like a stall to the heuristic --------
     # Several players sit on the last frame with paused still False, long enough to clear
     # BUFFER_STALL_DETECT - which would pause the whole room as the file ends.
@@ -649,6 +693,7 @@ try:
     cp.hadFirstStateUpdate = True
     cp.clientIgnoringOnTheFly = cp.serverIgnoringOnTheFly = 0
     cp._sentBuffering = False
+    cp._pendingStateChange = False
     cp.sendMessage = lambda m: None
     cp._client = types.SimpleNamespace(getLocalState=lambda: (None, None, None, False),
                                        updateGlobalState=lambda *a: None,

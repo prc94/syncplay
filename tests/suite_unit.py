@@ -477,6 +477,7 @@ cp = SyncClientProtocol.__new__(SyncClientProtocol)
 cp.hadFirstStateUpdate = True
 cp.clientIgnoringOnTheFly = 0
 cp.serverIgnoringOnTheFly = 0
+cp._pendingStateChange = False
 cp._pingService = PingService()
 calls = {"yap": [], "pw": []}
 client_mock = mock.Mock()
