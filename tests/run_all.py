@@ -4,8 +4,9 @@
 Usage: python3 tests/run_all.py [--unit-only | --e2e-only]
 
 Unit suites exercise server/client/protocol classes directly; E2E suites boot real
-syncplayServer.py processes and drive them over sockets (they need free ports 19001-19081
-and take ~2 minutes). The lua suite is static analysis + Python-ported simulations.
+syncplayServer.py processes and drive them over sockets (they need free ports 19001-19198
+and take ~4 minutes; suite_flaky_e2e.py is ~2 of those on its own, because a bad link has to be
+waited out in real time). The lua suite is static analysis + Python-ported simulations.
 """
 import os
 import subprocess
@@ -14,7 +15,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 UNIT = ["suite_unit.py", "suite_cap.py", "suite_osd.py", "suite_admin.py", "suite_tracks.py", "suite_domains.py", "suite_afk.py", "suite_joinguard.py", "suite_fileswitch.py", "suite_joinprop.py", "suite_lag.py", "suite_buffer.py", "suite_lua.py", "suite_lint.py", "suite_overlay.py", "suite_updater.py"]
-E2E = ["suite_e2e.py", "suite_e2e2.py", "suite_osd_e2e.py", "suite_admin_e2e.py", "suite_tracks_e2e.py", "suite_domains_e2e.py", "suite_afk_e2e.py", "suite_joinguard_e2e.py", "suite_fileswitch_e2e.py", "suite_joinprop_e2e.py", "suite_buffer_e2e.py"]
+E2E = ["suite_e2e.py", "suite_e2e2.py", "suite_osd_e2e.py", "suite_admin_e2e.py", "suite_tracks_e2e.py", "suite_domains_e2e.py", "suite_afk_e2e.py", "suite_joinguard_e2e.py", "suite_fileswitch_e2e.py", "suite_joinprop_e2e.py", "suite_buffer_e2e.py", "suite_flaky_e2e.py"]
 
 def main():
     suites = UNIT + E2E
