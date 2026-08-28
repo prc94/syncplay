@@ -102,6 +102,16 @@ PING_MAX_ASYMMETRY_CORRECTION = 0.5  # Secs - most one-sample path asymmetry tha
 PING_MAX_FORWARD_DELAY = 1.5  # Secs - hard ceiling on the forward-delay estimate; past this the estimate is noise and compensating with it does more harm than not
 MAX_MESSAGE_AGE = 2.0  # Secs - ceiling applied where messageAge is added to a reported position, so no estimate (or hostile peer's timestamps) can teleport anyone
 
+# Stale-echo guard (server-side, see docs/flaky-link-sync.md). A client's ordinary heartbeat carries
+# the play state it was last told to adopt; on a slow link that report describes the room as it was
+# one round trip ago, and the server used to read the contradiction as a fresh keypress. The window
+# below is how long after a room pause change such a contradiction is treated as an echo rather than
+# a command - scaled from the measured forward delay, because that is what makes a report stale.
+PAUSE_ECHO_GUARD_FACTOR = 2.0  # Multiplier on the forward-delay estimate: the echo takes a round trip (two hops) to come back
+PAUSE_ECHO_GUARD_MARGIN = 0.3  # Secs of slack on top, covering the server's own 1s state tick granularity and jitter
+PAUSE_ECHO_GUARD_MIN = 0.25  # Secs - floor, so a LAN client's echo is still caught without swallowing a human's next keypress
+PAUSE_ECHO_GUARD_MAX = 5.0  # Secs - ceiling, so a wild latency estimate cannot make the server deaf to pauses
+
 # Sustained-desync requirement. A single State message is not evidence of a desync: reacting to one
 # sample is what turned link jitter into visible rewinds and speed changes. The fast-forward path
 # has always demanded sustained evidence (via behindFirstDetected); these give the rewind and
@@ -115,6 +125,7 @@ SLOWDOWN_SUSTAIN_DURATION = 1.5  # Secs - ditto before nudging playback speed do
 BUFFER_STALL_DETECT = 0.8  # Secs a supposedly-playing position must stay frozen before it counts as a stall rather than an ordinary poll gap
 BUFFER_STALL_TOLERANCE = 0.15  # Secs of progress within that window that still counts as "frozen" (players report position coarsely)
 BUFFER_RECOVER_HOLD = 1.0  # Secs the position must advance again continuously before the client declares itself recovered
+BUFFER_HOLD_SETTLE = 4.0  # Secs a stall stands while the room is paused *for it*: a paused player cannot demonstrate progress, so without this the hold reads as recovery ~1s after it starts and cancels itself
 BUFFER_REPORT_STALE = 3.0  # Secs after a watcher's last buffering report before the server stops believing it - nobody holds a room by going quiet
 BUFFER_HOLD_MAX = 120.0  # Secs - a hold this long is not a cache filling up; give up, stay paused and say so once (cf. YAP_TIMER_MAX_PAUSE)
 BUFFER_HOLD_TICK = 1.0  # Secs between hold bookkeeping ticks (timeout check; the OSD rides the State heartbeat)

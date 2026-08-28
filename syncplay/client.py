@@ -376,6 +376,45 @@ class SyncplayClient(object):
             return False
         return now - referenceTime >= constants.BUFFER_STALL_DETECT
 
+    def _bufferHoldIsInForce(self):
+        """Whether a buffer hold has the room paused - the server's (for anyone) or our own fallback.
+
+        Somebody else's hold counts: it stops our playback just as thoroughly, so our own stall
+        detection cannot see anything either way while it lasts.
+        """
+        return self._bufferHoldActive or self._bufferFallbackPaused
+
+    def _stallStandsWhileHeld(self):
+        """Are we still stalled, asked while a buffer hold has playback stopped?
+
+        This is the one situation where the ordinary rules cannot answer. Detection is built on a
+        position that should be advancing and is not - but nothing is advancing during a hold,
+        because the hold paused it. Reading that as "recovered" is what made a hold cancel itself
+        about a second after it started, over and over, on exactly the connections it exists for.
+
+        A player that tracks its own cache is simply asked. Anything else keeps the verdict it had
+        for BUFFER_HOLD_SETTLE - long enough to be worth having paused for, short enough that a
+        cache which did fill is not sat on - and the room then tries again. A stall that really is
+        not clearing now reaches the server's own patience limit (BUFFER_HOLD_MAX) instead of
+        restarting the clock on every cycle.
+
+        A client that was not stalled to begin with (the hold is somebody else's) has no verdict to
+        keep and simply stays not-stalled: _bufferingSince is None and _buffering is False.
+        """
+        # Neither the frozen-position baseline nor the sustained-evidence clock means anything while
+        # playback is stopped, and a stale one would let the poll straight after the hold declare a
+        # fresh stall with no evidence at all - which is the flap again, one release later.
+        self._stallReference = None
+        self._clearSustainedDesync("buffering")
+        native = self._playerBufferState()
+        if native is not None:
+            stalled, percent = native
+            self._bufferCachePercent = percent if stalled else None
+            return stalled
+        if self._bufferingSince is None:
+            return self._buffering
+        return time.time() - self._bufferingSince < constants.BUFFER_HOLD_SETTLE
+
     def _bufferingEvidence(self, paused, position):
         """Whether there is enough evidence that our player is stalled filling a cache.
 
@@ -385,6 +424,8 @@ class SyncplayClient(object):
         """
         if self._player is None or not self.userlist.currentUser.file:
             return False
+        if self._bufferHoldIsInForce():
+            return self._stallStandsWhileHeld()
         if paused or self.getGlobalPaused() or self._lastGlobalUpdate is None:
             return False  # nobody is meant to be playing: a still position means nothing
         if self._pauseChangeIsPlayerNoise() or self.waitingToLoadNewfile:

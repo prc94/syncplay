@@ -19,7 +19,7 @@ import time
 import types
 from syncplay import constants
 from syncplay.protocols import PingService, SyncClientProtocol
-from syncplay.server import Watcher
+from syncplay.server import Room, Watcher
 
 RESULTS = []
 def check(name, cond, detail=""):
@@ -136,6 +136,7 @@ def test_handle_state_ping_without_latency_calculation():
     p.clientIgnoringOnTheFly = 0
     p.serverIgnoringOnTheFly = 0
     p._sentBuffering = False
+    p._pendingStateChange = False
     p._client = types.SimpleNamespace(
         getLocalState=lambda: (None, None, None, False),
         updateGlobalState=lambda *a: None,
@@ -416,6 +417,196 @@ def test_link_simulation():
           abs(player.pos - roompos) < 2.0, "drift=%+.3fs" % (player.pos - roompos))
 
 
+# --------------------------------------------------------------------------- stale-echo guard
+# Every watcher reports its play state once a second whether or not anything changed. On a slow
+# link that report describes the room as it was a round trip ago, and the server used to read the
+# contradiction as a keypress - which flipped the room, which produced the same contradiction from
+# the other side one round trip later. Measured at 800ms RTT before the guard: 14 flips in 12s, all
+# blamed on the lagging watcher. See docs/flaky-link-sync.md and tests/suite_flaky_e2e.py.
+class EchoConnector:
+    def __init__(self):
+        self.states = []
+    def setWatcher(self, watcher):
+        pass
+    def sendState(self, position, paused, doSeek, setBy, forced=False):
+        self.states.append((paused, forced))
+    def isLogged(self):
+        return True
+    def getFeatures(self):
+        return {}
+    def getVersion(self):
+        return "1.7.0"
+    def meetsMinVersion(self, version):
+        return True
+    def sendMessage(self, message):
+        pass
+    def drop(self):
+        pass
+
+
+class EchoServer:
+    disableReady = False
+
+    def __init__(self):
+        self.forced = []
+        self.readiness = []
+    def setReady(self, watcher, isReady):
+        self.readiness.append(isReady)
+    def sendFileUpdate(self, watcher):
+        pass
+    def sendState(self, watcher, doSeek=False, forcedUpdate=False):
+        pass
+    def setAfk(self, watcher, isAfk):
+        pass
+    def updateYapTimer(self, room, paused, watcher):
+        pass
+    def updatePauseWarning(self, room, paused, watcher):
+        pass
+    def forcePositionUpdate(self, watcher, doSeek, watcherPauseState):
+        self.forced.append((doSeek, watcherPauseState))
+    def pullWatcherIntoSyncIfNeeded(self, watcher, requireFile=True):
+        pass
+    def removeWatcher(self, watcher):
+        pass
+
+
+def echoWatcher():
+    """A settled watcher in a playing room, with the room's play state freshly changed."""
+    server = EchoServer()
+    room = Room("echoroom", None)
+    watcher = Watcher(server, EchoConnector(), "laggy")
+    room.addWatcher(watcher)
+    watcher.setFile({"name": "a.mkv", "duration": 3600, "size": 1})
+    watcher._fileChangedAt = None  # settled long ago: this is playback, not a file switch
+    watcher.establishPosition()
+    watcher.setPosition(100.0)
+    room._setPlayState(Room.STATE_PLAYING)   # ...and now the room pauses, as a buffer hold would
+    room._setPlayState(Room.STATE_PAUSED)
+    return server, room, watcher
+
+
+def test_stale_echo_guard():
+    # The heartbeat that arrives one round trip after the room paused still says "playing".
+    server, room, watcher = echoWatcher()
+    watcher.updateState(100.0, False, False, 0.4, True)
+    check("stale heartbeat contradicting a just-changed room is not a command",
+          room.isPaused() and not server.forced, "paused=%s forced=%s" % (room.isPaused(), server.forced))
+
+    # The same report once the window has passed is a user who has caught up and pressed play.
+    server, room, watcher = echoWatcher()
+    VIRTUAL[0] += 10.0
+    watcher.updateState(100.0, False, False, 0.4, True)
+    check("the same report outside the echo window is obeyed",
+          not room.isPaused(), "paused=%s" % room.isPaused())
+
+    # A keypress announces itself by bumping ignoringOnTheFly.client in the message that carries it;
+    # the protocol passes echoCandidate=False for those, and they are never guarded.
+    server, room, watcher = echoWatcher()
+    watcher.updateState(100.0, False, False, 0.4, False)
+    check("a report flagged as a user action is obeyed inside the window",
+          not room.isPaused(), "paused=%s" % room.isPaused())
+
+    # The window has to scale with the link, or it either misses the echo or deafens the server.
+    server, room, watcher = echoWatcher()
+    VIRTUAL[0] += 0.5                       # past a LAN client's window, well inside a 0.4s-delay one
+    watcher.updateState(100.0, False, False, 0.0, True)
+    check("a LAN client's window is short enough not to swallow a real keypress",
+          not room.isPaused(), "paused=%s" % room.isPaused())
+    server, room, watcher = echoWatcher()
+    VIRTUAL[0] += 0.5
+    watcher.updateState(100.0, False, False, 0.4, True)
+    check("a slow client's window still covers its own round trip",
+          room.isPaused(), "paused=%s" % room.isPaused())
+
+    # A wild latency estimate must not make the server permanently deaf.
+    server, room, watcher = echoWatcher()
+    VIRTUAL[0] += constants.PAUSE_ECHO_GUARD_MAX + 1.0
+    watcher.updateState(100.0, False, False, 3600.0, True)
+    check("the window is capped however large the latency estimate gets",
+          not room.isPaused(), "paused=%s" % room.isPaused())
+
+    # A room that has never changed state has nothing to echo: pauses must work from the first one.
+    server = EchoServer()
+    room = Room("fresh", None)
+    watcher = Watcher(server, EchoConnector(), "someone")
+    room.addWatcher(watcher)
+    watcher.setFile({"name": "a.mkv", "duration": 3600, "size": 1})
+    watcher.establishPosition()
+    watcher.updateState(100.0, True, False, 0.4, True)
+    check("the first pause in a room is never mistaken for an echo",
+          room.isPaused(), "paused=%s" % room.isPaused())
+
+    # A rejected pause (locked room) never changes the room state, so the guard must stay out of the
+    # way of the readiness toggle that converts it - suite_admin covers the toggle itself.
+    server, room, watcher = echoWatcher()
+    room._locked = True
+    VIRTUAL[0] += 10.0
+    watcher.updateState(100.0, False, False, 0.4, True)
+    check("a rejected pause in a locked room still reaches the readiness path",
+          room.isPaused() and len(server.readiness) == 1,
+          "paused=%s readiness=%s" % (room.isPaused(), server.readiness))
+
+
+# --------------------------------------------------------------------------- pending user action
+def pendingProtocol(playerPaused):
+    """A logged-in client protocol whose player reports `playerPaused`."""
+    p = SyncClientProtocol.__new__(SyncClientProtocol)
+    p._pingService = PingService()
+    p.hadFirstStateUpdate = True
+    p.clientIgnoringOnTheFly = 0
+    p.serverIgnoringOnTheFly = 0
+    p._sentBuffering = False
+    p._pendingStateChange = False
+    p._client = types.SimpleNamespace(
+        getLocalState=lambda: (100.0, playerPaused[0], False, False),
+        updateGlobalState=lambda *a: None,
+        isBuffering=lambda: False,
+        getBufferCachePercent=lambda: None,
+        setBufferHoldActive=lambda active: None,
+        ui=types.SimpleNamespace(updateBufferHold=lambda values: None))
+    sent = []
+    p.sendMessage = lambda m: sent.append(m["State"])
+    return p, sent
+
+
+def test_pending_state_change():
+    # First keypress goes out and is marked as a change.
+    playerPaused = [True]
+    p, sent = pendingProtocol(playerPaused)
+    p.sendState(100.0, True, False, None, True)
+    check("a keypress is sent with the playstate and the change marker",
+          "playstate" in sent[-1] and sent[-1].get("ignoringOnTheFly", {}).get("client") == 1,
+          repr(sent[-1]))
+
+    # Second keypress inside the same round trip cannot be sent - but must not be lost either.
+    playerPaused[0] = False
+    p.sendState(100.0, False, False, None, True)
+    check("a keypress inside the round trip is held, not put on the wire",
+          "playstate" not in sent[-1], repr(sent[-1]))
+    check("...and held as pending", p._pendingStateChange, "pending=%s" % p._pendingStateChange)
+    check("...without inflating the counter for a message nobody will see",
+          p.clientIgnoringOnTheFly == 1, "counter=%d" % p.clientIgnoringOnTheFly)
+
+    # The acknowledgement arrives: the held keypress goes out, once, as the change it always was.
+    p.handleState({"ignoringOnTheFly": {"client": 1},
+                   "playstate": {"position": 100.0, "paused": True, "setBy": "someoneelse"}})
+    check("the held keypress is sent as soon as the acknowledgement lands",
+          "playstate" in sent[-1] and sent[-1]["playstate"]["paused"] is False,
+          repr(sent[-1].get("playstate")))
+    check("...as a user action, so the server does not read it as an echo",
+          sent[-1].get("ignoringOnTheFly", {}).get("client") == 1, repr(sent[-1].get("ignoringOnTheFly")))
+    check("...and is not repeated afterwards", not p._pendingStateChange,
+          "pending=%s" % p._pendingStateChange)
+
+    # A plain heartbeat is never marked as a change: that marker is what tells the server the
+    # difference between a keypress and this client repeating itself.
+    playerPaused[0] = True
+    p2, sent2 = pendingProtocol(playerPaused)
+    p2.sendState(100.0, True, False, None, False)
+    check("a heartbeat carries a playstate and no change marker",
+          "playstate" in sent2[-1] and "ignoringOnTheFly" not in sent2[-1], repr(sent2[-1]))
+
+
 def main():
     _install_clock()
     try:
@@ -423,6 +614,8 @@ def main():
         test_handle_state_ping_without_latency_calculation()
         test_message_age_caps()
         test_sustained_desync_gating()
+        test_stale_echo_guard()
+        test_pending_state_change()
         test_link_simulation()
     finally:
         _restore_clock()
