@@ -17,7 +17,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO_ROOT)  # import the repo's syncplay, not any system-installed copy
 
 from syncplay import constants
-from syncplay.server import RoomManager, Room, ControlledRoom
+from syncplay.server import RoomManager, ControlledRoom
 import syncplay.messages as M
 M.setLanguage("en")
 
