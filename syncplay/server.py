@@ -1282,27 +1282,38 @@ class RoomManager(object):
         self._permanentRooms = permanentRooms
         if self._roomsDbFile is not None:
             self._roomsDbHandle = RoomDBManager(self._roomsDbFile, self.loadRooms)
-            self._roomsDbHandle.connect()
         else:
             self._roomsDbHandle = None
+        # The permanent rooms have to exist before the server starts accepting connections: the
+        # rooms DB is loaded through an async deferred, but ep_server listens straight away, so a
+        # client joining inside that window would otherwise be put in an ordinary room that gets
+        # discarded (along with its published domains) the moment it empties.
+        self._createPermanentRooms()
+        if self._roomsDbHandle is not None:
+            self._roomsDbHandle.connect()
+
+    def _createPermanentRooms(self):
+        for roomName in self._permanentRooms:
+            if not roomName.strip():
+                continue  # blank line in the permanent-rooms file
+            room = self._getRoom(roomName)
+            room.loadRoom((room.getName(), "", 0, 0, 0))
+            room.setPermanent(True)
 
     def loadRooms(self, rooms):
-        roomsLoaded = []
         for roomDetails in rooms:
             roomName = truncateText(roomDetails[0], constants.MAX_ROOM_NAME_LENGTH)
-            room = Room(roomDetails[0], self._roomsDbHandle)
-            room.loadRoom(roomDetails)
+            room = self._getRoom(roomName)
+            # This runs after the port is already open, so the room may have been created and used
+            # by a client that got in first. Restore the saved state only while nothing has been
+            # put in the room yet - and never replace the object, which would orphan the watchers
+            # already holding a reference to it.
+            if room.isPlaylistEmpty():
+                # Keep the room's own name in step with the key it is filed under, or
+                # _deleteRoomIfEmpty cannot find it again.
+                room.loadRoom((roomName,) + tuple(roomDetails[1:]))
             if roomName in self._permanentRooms:
                 room.setPermanent(True)
-            self._rooms[roomName] = room
-            roomsLoaded.append(roomName)
-        for roomName in self._permanentRooms:
-            if roomName not in roomsLoaded:
-                roomDetails = (roomName, "", 0, 0, 0)
-                room = Room(roomName, self._roomsDbHandle)
-                room.loadRoom(roomDetails)
-                room.setPermanent(True)
-                self._rooms[roomName] = room
 
     def broadcastRoom(self, sender, whatLambda):
         room = sender.getRoom()
