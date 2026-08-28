@@ -236,6 +236,13 @@ class StubPlaylist:
         return lambda *a, **k: None
 
 
+class StubWatched:
+    """Watched-history tracking is not what is under test; every call is a no-op."""
+
+    def __getattr__(self, name):
+        return lambda *a, **k: None
+
+
 class StubUserlist:
     """Just enough userlist for the join path; the room model under test lives on the server."""
 
@@ -314,6 +321,7 @@ def build_client(username, room, ui, player, config_overrides=None):
     client.userlist = StubUserlist(username)
     client.userlist.currentUser.room = room
     client.playlist = StubPlaylist()
+    client.watched = StubWatched()
     client._warnings = types.SimpleNamespace(checkWarnings=lambda: None, checkReadyStates=lambda: None)
     client.serverFeatures = {}
     client.serverVersion = "1.7.0"

@@ -74,6 +74,12 @@ class ConfigurationGetter(object):
             "updateRepo": constants.UPDATE_DEFAULT_REPO,
             "updateRepoKey": "",
             "resetConfig": False,
+            "watchedSubfolder": "Watched",
+            "watchedSubfolderAutocreate": False,
+            "watchedAutoMove": False,
+            "watchedHistoryEnabled": False,
+            "autoRemoveWatchedFromPlaylist": False,
+            "configDir": "",
             "showOSD": True,
             "showOSDWarnings": True,
             "showSlowdownOSD": True,
@@ -82,6 +88,8 @@ class ConfigurationGetter(object):
             "showNonControllerOSD": False,
             "showContactInfo": True,
             "showDurationNotification": True,
+            "showPlaylistSkipWarnings": True,
+            "showPlaylistOrderWarnings": True,
             "chatInputEnabled": True,
             "chatInputFontFamily": 'sans-serif',
             "chatInputRelativeFontSize": constants.DEFAULT_CHAT_FONT_SIZE,
@@ -146,6 +154,12 @@ class ConfigurationGetter(object):
             "showSameRoomOSD",
             "showNonControllerOSD",
             "showDurationNotification",
+            "showPlaylistSkipWarnings",
+            "showPlaylistOrderWarnings",
+            "watchedSubfolderAutocreate",
+            "watchedAutoMove",
+            "watchedHistoryEnabled",
+            "autoRemoveWatchedFromPlaylist",
             "sharedPlaylistEnabled",
             "loopAtEndOfPlaylist",
             "loopSingleFiles",
@@ -214,6 +228,8 @@ class ConfigurationGetter(object):
                 "filesizePrivacyMode", "unpauseAction",
                 "pauseOnLeave", "readyAtStart", "autoplayMinUsers",
                 "autoplayInitialState", "mediaSearchDirectories",
+                "watchedSubfolder", "watchedSubfolderAutocreate", "watchedAutoMove",
+                "watchedHistoryEnabled", "autoRemoveWatchedFromPlaylist",
                 "sharedPlaylistEnabled", "loopAtEndOfPlaylist",
                 "loopSingleFiles",
                 "autoplayRequireSameFilenames",
@@ -223,6 +239,7 @@ class ConfigurationGetter(object):
                 "showOSD", "showOSDWarnings", "showSlowdownOSD",
                 "showDifferentRoomOSD", "showSameRoomOSD",
                 "showNonControllerOSD", "showDurationNotification",
+                "showPlaylistSkipWarnings", "showPlaylistOrderWarnings",
                 "chatInputEnabled", "chatInputFontUnderline",
                 "chatInputFontFamily", "chatInputRelativeFontSize",
                 "chatInputFontWeight", "chatInputFontColor",
@@ -400,6 +417,12 @@ class ConfigurationGetter(object):
                 return configFile
         return self._expandConfigPath()
 
+    def getConfigDir(self):
+        iniPath = self._config.get("configPath")
+        if not iniPath:
+            iniPath = self._getConfigurationFilePath()
+        return os.path.dirname(os.path.abspath(iniPath))
+
     def _expandConfigPath(self, name=None, xdg=True):
         if os.name != 'nt':
             if xdg:
@@ -517,6 +540,8 @@ class ConfigurationGetter(object):
 
     def getConfiguration(self):
         iniPath = self._getConfigurationFilePath()
+        self._config['configPath'] = iniPath
+        self._config['configDir'] = os.path.dirname(os.path.abspath(iniPath))
         self._parseConfigFile(iniPath)
         #
         # Watch out for the method self._overrideConfigWithArgs when you're adding custom multi-word command line arguments
@@ -595,6 +620,8 @@ class ConfigurationGetter(object):
         if (self._config['forceGuiPrompt'] == "True" or not self._config['file']) and not self._config['noGui'] and not utils.isWindowsConsole():
             self._forceGuiPrompt()
         self._checkConfig()
+        self._config['configPath'] = iniPath
+        self._config['configDir'] = os.path.dirname(os.path.abspath(iniPath))
         self._saveConfig(iniPath)
         if self._config['file']:
             self._config['loadedRelativePaths'] = self._loadRelativeConfiguration()

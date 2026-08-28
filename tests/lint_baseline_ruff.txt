@@ -16,7 +16,6 @@ syncplay/client.py|F811|version
 syncplay/client.py|F841|newPath
 syncplay/client.py|F841|positionBeforeSeek
 syncplay/ep_client.py|F401|sys
-syncplay/messages_eo.py|F601|"mpv-failed-advice"
 syncplay/players/mplayer.py|F401|sys
 syncplay/players/mpv.py|F401|syncplay.utils.isASCII
 syncplay/players/mpv.py|F401|sys
@@ -41,7 +40,7 @@ syncplay/ui/GuiConfiguration.py|F841|config
 syncplay/ui/__init__.py|F841|e
 syncplay/ui/consoleUI.py|F401|os
 syncplay/ui/consoleUI.py|F401|syncplay.utils.isURL
-syncplay/ui/gui.py|F401|datetime.datetime
 syncplay/ui/gui.py|F401|sys
 syncplay/ui/gui.py|F811|Qt
 syncplay/utils.py|F401|sys
+syncplay/watched.py|F841|filename

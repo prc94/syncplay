@@ -334,7 +334,10 @@ def run_afk_keybind_then_pause(canControl):
     c._warnings = types.SimpleNamespace(checkReadyStates=lambda: None)
     c.playlist = types.SimpleNamespace(advancePlaylistCheck=lambda: None,
                                        notJustChangedPlaylist=lambda: True,
-                                       canSwitchToNextPlaylistIndex=lambda: False)
+                                       canSwitchToNextPlaylistIndex=lambda: False,
+                                       _notPlayingCurrentIndex=lambda: True,
+                                       recordPlayedNearEOF=lambda paused, position: None)
+    c.watched = types.SimpleNamespace(processQueue=lambda: None)
     c.toggleAfkWithPause()          # issues player pause + sends setAfk, arms the one-shot
     c.updatePlayerStatus(True, 5.0) # player reports the pause before the Set:afk echo arrives
     return wire
@@ -378,7 +381,10 @@ def normal_user_pause_still_toggles_ready():
     c._warnings = types.SimpleNamespace(checkReadyStates=lambda: None)
     c.playlist = types.SimpleNamespace(advancePlaylistCheck=lambda: None,
                                        notJustChangedPlaylist=lambda: True,
-                                       canSwitchToNextPlaylistIndex=lambda: False)
+                                       canSwitchToNextPlaylistIndex=lambda: False,
+                                       _notPlayingCurrentIndex=lambda: True,
+                                       recordPlayedNearEOF=lambda paused, position: None)
+    c.watched = types.SimpleNamespace(processQueue=lambda: None)
     c.updatePlayerStatus(True, 5.0)
     return wire
 
